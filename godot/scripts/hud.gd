@@ -417,7 +417,7 @@ func _fill_notebook() -> void:
 			t += "  %s x%d  %s\n" % [g.name, int(g.count), d.get("description", "")]
 	t += "\n[color=#D9962B]CONTROLS[/color]\n"
 	t += "  WASD move  SHIFT sprint  CTRL/C crouch (sprint+crouch = slide)  SPACE jump (hold at a ledge to mantle)\n"
-	t += "  E use / enter car  F takedown  X draw/holster  LMB fire  RMB aim  R reload  B fire mode\n"
+	t += "  E use / enter car  F takedown  H draw/holster  X exchange  LMB fire  RMB aim  R reload  B fire mode\n"
 	t += "  Q next gadget  G use gadget  TAB dossier  ESC pause  F1 tuning  F3 frame time  T reset car\n"
 	t += "\nAn armed or trespassing stranger is hostile. In the street you are just another clerk."
 	_notebook_text.text = t
@@ -473,11 +473,11 @@ func _process(dt: float) -> void:
 	var wname: String = rig.weapon.get("name", "")
 	var kind := str(rig.weapon.get("kind", "gun"))
 	if kind == "gun":
-		lines.append("%s %s %s  %s" % [wname, "AUTO" if rig.auto_mode else "SEMI", ammo_txt, "DRAWN" if rig.drawn else "holstered (X)"])
+		lines.append("%s %s %s  %s" % [wname, "AUTO" if rig.auto_mode else "SEMI", ammo_txt, "DRAWN" if rig.drawn else "holstered (H)"])
 	elif kind == "melee":
-		lines.append("%s  throwing x%s (RMB)  %s" % [wname, ammo_txt.get_slice("/", 0), "DRAWN" if rig.drawn else "holstered (X)"])
+		lines.append("%s  throwing x%s (RMB)  %s" % [wname, ammo_txt.get_slice("/", 0), "DRAWN" if rig.drawn else "holstered (H)"])
 	else:
-		lines.append("%s  LMB fire / again to let go  %s" % [wname, "DRAWN" if rig.drawn else "holstered (X)"])
+		lines.append("%s  LMB fire / again to let go  %s" % [wname, "DRAWN" if rig.drawn else "holstered (H)"])
 	var strip := []
 	for i in rig.loadout.size():
 		var nm := str(rig.loadout[i].def.get("short", rig.loadout[i].def.get("name", "?")))

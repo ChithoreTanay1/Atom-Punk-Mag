@@ -333,6 +333,22 @@ static func wire_coil() -> Mesh:
 			b.cyl_xf(P.STEEL, t, 0.26, 0.26, 0.012, 10, false)
 		return b.mesh())
 
+## Airship: pale envelope, banner band, gondola with lit windows.
+static func dirigible() -> Mesh:
+	return cached("dirigible", func():
+		var db := Builder.new(0.0)
+		var t := Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3.ZERO)
+		db.cyl_xf(P.CONCRETE_PALE, t, 6.0, 6.0, 30.0, 16)
+		db.cyl_xf(P.CONCRETE_PALE, Transform3D(t.basis, Vector3(0, 0, -19.0)), 6.0, 1.0, 8.0, 16)
+		db.cyl_xf(P.CONCRETE_PALE, Transform3D(Basis(Vector3.RIGHT, -PI / 2), Vector3(0, 0, 18.0)), 6.0, 1.5, 6.0, 16)
+		db.box(P.CHARCOAL, Vector3(0, -6.6, 0), Vector3(3, 1.6, 9), false)
+		db.box(P.WINDOWS, Vector3(0, -6.6, 0), Vector3(3.1, 0.7, 8), false)
+		db.box(P.BANNER, Vector3(0, 0, 0), Vector3(12.2, 4.0, 4.0), false)
+		for s in [-1, 1]:
+			db.box(P.STEEL, Vector3(0, 5.5 * s, 19), Vector3(0.4, 5, 4), false)
+			db.box(P.STEEL, Vector3(5.5 * s, 0, 19), Vector3(5, 0.4, 4), false)
+		return db.mesh())
+
 # ------------------------------------------------------------- characters
 
 ## An animated humanoid body (NpcBody: library skeleton, BodyKit parts).

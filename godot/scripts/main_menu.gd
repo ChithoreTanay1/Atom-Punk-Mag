@@ -108,7 +108,7 @@ func _ready() -> void:
 	menu.add_child(_item("03", "Free play: Saptavarta", func():
 		Game.sim.start_mission()
 		Game.free_play()))
-	menu.add_child(_item("04", "Feel test: track and test room", func():
+	menu.add_child(_item("04", "Feel test: expressway and test room", func():
 		Game.mode = "free"
 		Game.goto("res://scenes/test_track.tscn")))
 	_gap(menu, 18)

@@ -9,6 +9,7 @@ enum {
 	FOLIAGE, GLASS, WATER, WINDOWS, BANNER, LAMP, SKIN, GUARD, ROBE, BLACK, CHROME, TYRE,
 	CAR_PAINT, CAR_ORANGE, CAR_GLASS, PLUSH, DASH_DARK,
 	ARMOR, TUNIC, CARBON, CAPE,
+	ASPHALT, PAINT, PAVING, JALI, SIGN,
 	COUNT
 }
 
@@ -18,6 +19,7 @@ const CRT_SHADER := preload("res://shaders/crt.gdshader")
 static var _mats: Array[Material] = []
 static var window_mat: ShaderMaterial
 static var lamp_mat: ShaderMaterial
+static var jali_mat: ShaderMaterial
 static var _ext_mats: Array[ShaderMaterial] = []
 
 static func _kit(col: String, pattern := 0, rough := 0.85, scale := 1.0, accent := "#000000", metal := 0.0, wet := 0.0) -> ShaderMaterial:
@@ -108,10 +110,20 @@ static func mats() -> Array[Material]:
 	_mats[TUNIC] = _kit("#6A4A34", 8, 0.92, 2.2)
 	_mats[CARBON] = _kit("#24272A", 5, 0.4, 6.0, "#000000", 0.45)
 	_mats[CAPE] = _kit("#BF7020", 8, 0.9, 2.0)
-	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE, ROAD, FOLIAGE, STEEL, CHARCOAL, CAR_PAINT, CAR_ORANGE]:
+	# Expressway (refs/expressway.jfif): worn asphalt, off-white road paint,
+	# slab paving, a pierced jali screen, and the teal-green road sign.
+	_mats[ASPHALT] = _kit("#4A4F51", 10, 0.82, 0.6, "#000000", 0.0, 0.75)
+	_mats[PAINT] = _kit("#C9C8BE", 0, 0.6, 1.0, "#000000", 0.0, 0.5)
+	_mats[PAVING] = _kit("#9C9F9A", 7, 0.85, 2.0, "#000000", 0.0, 0.55)
+	jali_mat = _kit("#B7B5AA", 11, 0.9, 1.0)
+	jali_mat.set_shader_parameter("emission_color", Color("#E2A75A"))
+	jali_mat.set_shader_parameter("emission_energy", 0.0)
+	_mats[JALI] = jali_mat
+	_mats[SIGN] = _kit("#2F5F55", 0, 0.5)
+	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE, ROAD, FOLIAGE, STEEL, CHARCOAL, CAR_PAINT, CAR_ORANGE, ASPHALT, PAINT, PAVING, JALI]:
 		_ext_mats.append(_mats[i])
 		_mats[i].set_shader_parameter("exposed", 1.0)
-	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE]:
+	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE, JALI]:
 		_mats[i].set_shader_parameter("grime", 1.0)
 	_mats[FOLIAGE].set_shader_parameter("wetness", 0.4)
 	_mats[STEEL].set_shader_parameter("wetness", 0.5)
@@ -123,6 +135,7 @@ static func set_dusk(t: float) -> void:
 	mats()
 	window_mat.set_shader_parameter("emission_energy", lerpf(0.25, 2.4, t))
 	lamp_mat.set_shader_parameter("emission_energy", lerpf(1.0, 4.0, t))
+	jali_mat.set_shader_parameter("emission_energy", lerpf(0.0, 1.6, t))
 
 ## Kept for older callers: weather now drives the global weather_wet.
 static func set_wetness(w: float) -> void:

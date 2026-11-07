@@ -60,7 +60,19 @@ ASSETS.md         license and budget log for every asset
 
 1. `cargo build -p bridge` (the `.gdextension` points at `target/debug/bridge.dll`; build `--release` for the release entry).
 2. Run Godot 4.7.2 with `--path godot`, or open `/godot` in the editor and press Play.
-3. Main menu: **New campaign** (war room, then the field operation), **Free play: Saptavarta** (the mission alone), **Feel test** (track and test room, milestone 1).
+3. Main menu: **New campaign** (war room, then the field operation), **Free play: Saptavarta** (the mission alone), **Feel test** (the endless expressway, test room and handling pad, milestone 1).
+
+## The feel test: A1 Mauryan Way
+
+The driving test is an endless expressway built after `refs/expressway.jfif` (`scripts/expressway.gd`, `scripts/traffic.gd`, `scripts/minimap.gd`, level `scripts/test_track.gd`).
+
+- **Streaming:** the road runs along Z in 96 m chunks, 4 kept each side of you. Each chunk is duplicated from prebuilt pieces (road core, a left and a right building row, far skyline, sometimes an overpass), chosen by a hash of the chunk index, so a stretch looks the same when you come back. Past 2 km the whole world is shifted back to 0 (floating origin) and the car's chase camera is told (`ArcadeCar.shift_origin`).
+- **Cross-section:** 3 + 3 lanes with a median barrier (a gap every 8th chunk for U-turns), a promenade deck on the left, a viaduct on Y piers on the right, a service road, then building rows (jali halls with banners and saucer roofs, a tower on curved buttresses, a stepped ministry with chhatris, slab offices with fins and floor bands, a stone elephant plaza).
+- **Getting on the viaduct:** every 8th chunk has an on-ramp from the service road (chunk -1, just behind the spawn, is one, and a teal Kestrel waits on the service road in front of it); 4 chunks later there is an off-ramp. Climb, then steer left across the open parapet onto the deck.
+- **Traffic:** saloons and box vans keep left, follow, change lanes when stuck, and wrap round you. They push your car; they queue behind it.
+- **Minimap** (bottom right): lanes, viaduct and ramps (amber), overpasses, traffic, parked Kestrels, you; odometer and the level you are on.
+- **Feel-test kit:** in the yard beside the spawn: the on-foot test room (chunk 0) and a handling pad with jumps, slalom, rumble strips and a hill (chunk -1).
+- Debug: `--dusk=0..1` (default 0.55, blue hour).
 
 Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png --frames=150 --pos=x,y,z --yaw=deg --pitch=deg [--dusk=0..1] [--draw=1] [--quality=0..2]` saves a frame and prints FPS, draw calls and primitives. `--weapon=1..4` picks the starting slot. `--ragdoll=1 [--ragdoll_role=guard] [--ragdoll_tint=0|1] [--ragdoll_dist=m] [--ragdoll_wait=s]` stands you in front of an NPC and kills it to show the death ragdoll. Other modes: `--ragdoll=head` (face shot), `leg` (foot shot: kneel, then limp), `arm`, `down` (legs shot out), `takedown`, `yank` (hook and haul them in), `tether` (hook them and tie them to whatever is `--tether_turn=deg` to the side). Add `--exfil=s` to walk out s seconds after the kill and reach the debrief, `--press=1` to then press its first button, and `--campaign=1` to play it as tonight's campaign mission from your save (this overwrites the save).
 
@@ -79,7 +91,7 @@ Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png 
 |---|---|
 | Move / jump / sprint / crouch (slide while sprinting) | WASD / Space / Shift / Ctrl or C |
 | Interact, enter or leave a car | E |
-| Fire / aim / reload / holster / fire mode (the AK is full-auto only) | LMB / RMB / R / X / B |
+| Fire / aim / reload / holster / fire mode (the AK is full-auto only) | LMB / RMB / R / H / B |
 | Weapon slots: suppressed AK-47, silenced pistol, knife, grapple line | 1 / 2 / 3 / 4, or the mouse wheel |
 | Knife: slash (kills outright from behind) / throw a blade | LMB / RMB (walk over thrown blades to pick them up) |
 | Grapple line: fire at a surface, let go | LMB / LMB again, RMB or Space |
@@ -87,14 +99,14 @@ Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png 
 | Use gadget / next gadget | G or MMB / Q |
 | Takedown (from behind, unseen) | F |
 | Notebook (dossier, intel, objectives) | Tab |
-| Exchange terminal (buy / sell, telex wire) | M |
+| Exchange terminal (buy / sell, telex wire) | X (or M) |
 | Driving: cockpit / chase camera | V |
 | Reset car upright | T |
 | Pause / tuning panel / frame-time overlay / fullscreen | Esc / F1 / F3 / F11 |
 
 ## The Pataliputra Exchange (pretend stock market)
 
-A ticker tape runs along the top of the screen while you play, and M opens the terminal (the war room has an Exchange button too). It holds 15 invented listings across steel, cement, tech, agriculture, power, motors, banking and arms. You start with 5,000 pana and trade in lots of 1, 10 or 100.
+A ticker tape runs along the top of the screen while you play, and X (or M) opens the terminal (the war room has an Exchange button too). It holds 15 invented listings across steel, cement, tech, agriculture, power, motors, banking and arms. You start with 5,000 pana and trade in lots of 1, 10 or 100.
 
 - **State and logic** live in `core/src/market.rs` and travel with the campaign save. **Content** lives in `data/market.ron`. The bridge exposes `market_tick`, `market_event`, `market_trade` and `market_state` on GameSim, plus the `market_news` signal.
 - **Price model:** each company has a fundamental value. News moves the value at once, and part of the move gaps the price immediately. The price then chases the value with momentum and noise, and sectors move together.

@@ -2,7 +2,8 @@
 // so the whole kit needs no texture files and shares one shader.
 // pattern: 0 plain, 1 concrete (formwork panels, streaks), 2 walnut,
 // 3 marble, 4 geometric carpet, 5 brushed steel panels, 6 foliage,
-// 7 road / paving (wet), 8 fabric, 9 lit windows (facade glass grid)
+// 7 road / paving (wet), 8 fabric, 9 lit windows (facade glass grid),
+// 10 asphalt (lane wheel tracks, patches, cracks), 11 jali (pierced screen)
 shader_type spatial;
 render_mode diffuse_lambert, specular_schlick_ggx;
 
@@ -20,6 +21,9 @@ uniform float wetness : hint_range(0.0, 1.0) = 0.0;
 uniform float exposed : hint_range(0.0, 1.0) = 0.0;
 // Weathering grime on vertical faces (base dirt, streaks under sills).
 uniform float grime : hint_range(0.0, 1.0) = 0.0;
+// Asphalt (pattern 10): lanes run along Z, starting lane_offset from x = 0.
+uniform float lane_offset = 1.6;
+uniform float lane_width = 3.6;
 
 global uniform float weather_wet;
 global uniform float weather_snow;
@@ -128,6 +132,36 @@ void fragment() {
 		emis = mix(emis * lit, vec3(0.0), frame);
 		rough = 0.15;
 		metal = 0.2;
+	} else if (pattern == 10) {
+		// Aggregate, worn wheel tracks in every lane, resurfaced patches, cracks.
+		float n = vnoise(uv * 1.1) * 0.45 + vnoise(uv * 8.0) * 0.3 + vnoise(uv * 55.0) * 0.25;
+		col *= 0.86 + n * 0.24;
+		float lf = fract((abs(wpos.x) - lane_offset) / lane_width);
+		float track = smoothstep(0.13, 0.03, abs(abs(lf - 0.5) - 0.24)) * (0.7 + vnoise(wpos.xz * vec2(0.6, 0.08)) * 0.6);
+		col *= 1.0 - track * 0.14;
+		rough -= track * 0.14;
+		vec2 pc = floor(vec2(wpos.x / 2.6, wpos.z / 7.0));
+		float patch = step(0.94, hash(pc * 1.7 + 3.0));
+		col *= 1.0 - patch * 0.13;
+		rough += patch * 0.05;
+		float crack = smoothstep(0.014, 0.0, abs(vnoise(wpos.xz * 0.55) - 0.5)) * smoothstep(0.45, 0.75, vnoise(wpos.xz * 0.11 + 9.0));
+		col *= 1.0 - crack * 0.4;
+		rough = clamp(rough, 0.0, 1.0);
+	} else if (pattern == 11) {
+		// Pierced stone screen: interlocking diamonds with a boss in each,
+		// dark holes that glow faintly warm at dusk (the hall lit behind).
+		vec2 c = fract(uv * 1.4) - 0.5;
+		float d = abs(c.x) + abs(c.y);
+		float hole = smoothstep(0.36, 0.33, d) - smoothstep(0.17, 0.14, d);
+		vec2 c2 = fract(uv * 1.4 + 0.5) - 0.5;
+		hole *= smoothstep(0.05, 0.08, max(abs(c2.x), abs(c2.y)));
+		vec2 g = abs(fract(uv / vec2(2.4, 2.4)) - 0.5);
+		float seam = smoothstep(0.49, 0.5, max(g.x, g.y));
+		float n = vnoise(uv * 3.0);
+		col *= (0.88 + n * 0.16) * (1.0 - seam * 0.25);
+		col = mix(col, vec3(0.06, 0.065, 0.07), hole);
+		emis *= hole * (0.6 + hash(floor(uv * 0.25)) * 0.8);
+		rough = mix(0.85, 0.95, hole);
 	}
 
 	// Grime: dirt creeping up from the ground, darker under ledges.
@@ -180,7 +214,7 @@ void fragment() {
 		float edge = 1.0 - weather_snow;
 		float cover = up_k * smoothstep(edge * 1.1 - 0.05, edge * 1.1 + 0.2, n * 0.7 + 0.3 * up_k);
 		// Wheel ruts on roads stay slushier.
-		if (pattern == 7) {
+		if (pattern == 7 || pattern == 10) {
 			float rut = smoothstep(0.35, 0.0, abs(fract(wpos.x / 3.5) - 0.5) - 0.25);
 			cover *= 1.0 - rut * 0.55;
 		}

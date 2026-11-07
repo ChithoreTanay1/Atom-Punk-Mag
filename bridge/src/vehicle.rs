@@ -243,6 +243,13 @@ impl IRigidBody3D for ArcadeCar {
 
 #[godot_api]
 impl ArcadeCar {
+    /// Floating origin: the level moved the whole world by `delta`. The
+    /// chase camera smooths in world space, so carry its state along.
+    #[func]
+    fn shift_origin(&mut self, delta: Vector3) {
+        self.cam_pos += delta;
+    }
+
     #[func]
     fn set_driver(&mut self, on: bool) {
         self.driver_active = on;
