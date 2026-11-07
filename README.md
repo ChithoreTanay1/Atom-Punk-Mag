@@ -79,7 +79,7 @@ Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png 
 |---|---|
 | Move / jump / sprint / crouch (slide while sprinting) | WASD / Space / Shift / Ctrl or C |
 | Interact, enter or leave a car | E |
-| Fire / aim / reload / holster / fire mode | LMB / RMB / R / X / B |
+| Fire / aim / reload / holster / fire mode (the AK is full-auto only) | LMB / RMB / R / X / B |
 | Weapon slots: suppressed AK-47, silenced pistol, knife, grapple line | 1 / 2 / 3 / 4, or the mouse wheel |
 | Knife: slash (kills outright from behind) / throw a blade | LMB / RMB (walk over thrown blades to pick them up) |
 | Grapple line: fire at a surface, let go | LMB / LMB again, RMB or Space |

@@ -174,6 +174,7 @@ impl GameSim {
             "recoil_pitch_deg" => w.recoil_pitch_deg, "recoil_yaw_deg" => w.recoil_yaw_deg,
             "noise_radius" => w.noise_radius,
             "has_auto" => w.modes.contains(&magadha_core::content::FireMode::Auto),
+            "has_semi" => w.modes.contains(&magadha_core::content::FireMode::Semi),
             "kind" => match w.kind {
                 magadha_core::content::WeaponKind::Gun => "gun",
                 magadha_core::content::WeaponKind::Melee => "melee",

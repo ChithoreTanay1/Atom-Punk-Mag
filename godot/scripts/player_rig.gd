@@ -118,7 +118,7 @@ func setup(p: FpsController, lvl: Node) -> void:
 		loadout.append({"id": id, "def": def})
 		_free[id] = int(def.get("mag_size", 0))
 	if loadout.is_empty():
-		loadout.append({"id": "wpn_rifle_ashani", "def": {"fire_interval": 0.1, "spread_deg": 2.4, "ads_spread_deg": 0.4, "recoil_pitch_deg": 1.3, "recoil_yaw_deg": 0.5, "range": 120.0, "noise_radius": 11.0, "reload_time": 2.4, "mag_size": 30, "has_auto": true, "suppressed": true, "name": "AK-47", "kind": "gun", "short": "AK-47"}})
+		loadout.append({"id": "wpn_rifle_ashani", "def": {"fire_interval": 0.1, "spread_deg": 2.4, "ads_spread_deg": 0.4, "recoil_pitch_deg": 1.3, "recoil_yaw_deg": 0.5, "range": 120.0, "noise_radius": 11.0, "reload_time": 2.4, "mag_size": 30, "has_auto": true, "has_semi": false, "suppressed": true, "name": "AK-47", "kind": "gun", "short": "AK-47"}})
 		_free["wpn_rifle_ashani"] = 30
 	weapon_id = loadout[0].id
 	weapon = loadout[0].def
@@ -564,6 +564,8 @@ func _equip(i: int, initial := false) -> void:
 	_throw_t = 0.0
 	if not weapon.get("has_auto", false):
 		auto_mode = false
+	elif not weapon.get("has_semi", true):
+		auto_mode = true  # full-auto only (the AK)
 	if not initial:
 		_release_line()
 		_draw_t = 0.32
@@ -812,7 +814,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		_release_line()
 	elif e.is_action_pressed("reload"):
 		_reload()
-	elif e.is_action_pressed("fire_mode") and weapon.get("has_auto", false):
+	elif e.is_action_pressed("fire_mode") and weapon.get("has_auto", false) and weapon.get("has_semi", true):
 		auto_mode = not auto_mode
 		Game.play_2d("beep_low", -8)
 		_krv += Vector3(0, 0, 2.0)
