@@ -4,6 +4,7 @@
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use magadha_core::awareness::AwarenessParams;
+use magadha_core::injury::WoundParams;
 use magadha_core::nav::NavGraph;
 use magadha_core::tuning::Tuning;
 
@@ -11,6 +12,7 @@ use magadha_core::tuning::Tuning;
 pub struct World {
     pub tuning: Tuning,
     pub ai: AwarenessParams,
+    pub wounds: WoundParams,
     pub nav: NavGraph,
     pub alarm: bool,
     /// Dead NPCs not yet discovered: (instance id, position).

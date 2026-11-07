@@ -335,11 +335,10 @@ static func wire_coil() -> Mesh:
 
 # ------------------------------------------------------------- characters
 
-## Builds a humanoid with pivots the Rust Npc animates:
-## Visual/LegL, LegR, ArmL, ArmR. kind: guard, governor, courier, civilian.
-## Parts and outfits live in body_kit.gd (shared with the death ragdoll).
+## An animated humanoid body (NpcBody: library skeleton, BodyKit parts).
+## kind: guard, governor, courier, civilian.
 static func humanoid(kind: String, tint := 0) -> Node3D:
-	return BodyKit.living(kind, tint)
+	return NpcBody.create(kind, tint)
 
 static func make_npc(kind: String, pos: Vector3, tint := 0) -> Npc:
 	var n := Npc.new()

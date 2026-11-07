@@ -1,0 +1,25 @@
+// Locational damage. See core/src/injury.rs for meanings.
+// The head multiplier is the weapon's own `headshot_mult` (weapons.ron).
+(
+    neck_mult: 1.6,
+    chest_mult: 1.1,
+    abdomen_mult: 0.95,
+    pelvis_mult: 0.85,
+    upper_arm_mult: 0.5,
+    forearm_mult: 0.4,
+    hand_mult: 0.3,
+    thigh_mult: 0.6,
+    shin_mult: 0.45,
+    foot_mult: 0.35,
+    head_lethal_damage: 25.0,
+    stumble_time: 1.4,
+    low_leg_stumble_mult: 1.3,
+    leg_hits_to_down: 3,
+    limp_walk_mult: 0.55,
+    limp_run_mult: 0.4,
+    gun_arm_accuracy: 0.35,
+    off_arm_accuracy: 0.75,
+    gun_arm_fire_delay: 1.8,
+    downed_bleed: 1.5,
+    crash_damage_per_ms: 4.0,
+)

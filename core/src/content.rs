@@ -333,6 +333,7 @@ pub struct Content {
     pub events: Vec<EventDef>,
     pub campaign: CampaignDef,
     pub ai: crate::awareness::AwarenessParams,
+    pub wounds: crate::injury::WoundParams,
 }
 
 impl Content {
@@ -347,6 +348,7 @@ impl Content {
             events: read_ron(&dir.join("events.ron"))?,
             campaign: read_ron(&dir.join("campaign.ron"))?,
             ai: read_ron(&dir.join("ai.ron"))?,
+            wounds: read_ron(&dir.join("wounds.ron"))?,
         };
         c.validate()?;
         Ok(c)

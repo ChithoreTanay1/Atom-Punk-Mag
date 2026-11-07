@@ -178,17 +178,52 @@ func _debug_ragdoll() -> void:
 		best.set_physics_process(false)
 		await get_tree().create_timer(float(Game.debug.get("ragdoll_wait", "0.3"))).timeout
 	if best:
-		print("ragdoll test: ", best.role, " at ", best.global_position)
-		best.apply_damage(9999.0, player.global_position, Game.debug.get("ragdoll") == "head")
+		var mode := str(Game.debug.get("ragdoll"))
+		print("ragdoll test (%s): " % mode, best.role, " at ", best.global_position)
+		var from := player.global_position
+		match mode:
+			"leg":  # shot in the foot: drops to a knee, then limps
+				best.apply_hit(20.0, from, "foot_l")
+				best.set_physics_process(true)
+			"arm":
+				best.apply_hit(15.0, from, "forearm_r")
+				best.set_physics_process(true)
+			"down":  # legs shot out: on the ground, writhing
+				for z in ["thigh_l", "shin_r", "foot_l"]:
+					best.apply_hit(10.0, from, z)
+				best.set_physics_process(true)
+			"takedown":
+				best.set_meta("knock", 5.0)
+				best.set_meta("knock_how", "takedown")
+				best.take_down()
+			"yank", "tether":
+				rig._equip(rig.loadout.find_custom(func(e): return e.def.get("kind") == "grapple"), true)
+				rig.set_drawn(true)
+				rig._latched = best.get_node("Visual")
+				rig._hook_bone = "UpperChest"
+				await get_tree().create_timer(0.3).timeout
+				if mode == "yank":
+					rig._yank()
+				else:
+					# Turn to the nearest wall on the left and tie him to it.
+					player.set_look(player.get_yaw() + deg_to_rad(float(Game.debug.get("tether_turn", "70"))), 0.0)
+					await get_tree().process_frame
+					rig._tether_to_aim()
+			_:
+				best.apply_damage(9999.0, from, mode == "head")
 
-## Physical death: hand the body to the Active Ragdoll addon, knocked along
-## the killing blow (bullet, knife, takedown or a car).
+## Physical death: the NpcBody's own skeleton goes ragdoll (Active Ragdoll
+## addon), knocked along the killing blow: bullet (by body part), knife,
+## takedown or a car.
 func spawn_ragdoll(n: Npc) -> void:
+	var body := n.get_node_or_null("Visual") as NpcBody
+	if body == null:
+		return
 	for c in get_tree().get_nodes_in_group("cars"):
 		var ac := c as ArcadeCar
 		if ac and ac.global_position.distance_to(n.global_position) < 5.0 and ac.linear_velocity.length() > 3.0:
 			var v := ac.linear_velocity
-			RagdollCorpse.spawn(n, v * 9.0 + Vector3.UP * v.length() * 3.0, "Hips", "limp")
+			body.die(v * 9.0 + Vector3.UP * v.length() * 3.0, "Hips", "limp")
 			return
 	var from: Vector3 = n.get_last_hit_from()
 	if from == Vector3.ZERO:
@@ -198,7 +233,12 @@ func spawn_ragdoll(n: Npc) -> void:
 	dir = dir.normalized() if dir.length() > 0.01 else -n.global_basis.z
 	var knock := float(n.get_meta("knock", 26.0))
 	var how := str(n.get_meta("knock_how", "die"))
-	RagdollCorpse.spawn(n, (dir + Vector3.UP * 0.15) * knock, "Head" if n.get_last_hit_head() else "UpperChest", how)
+	var zone := str(n.get_last_hit_zone())
+	if zone == "head" and how == "die":
+		how = "head"
+	if how == "takedown":
+		dir = -dir  # slumps back onto the attacker
+	body.die((dir + Vector3.UP * 0.15) * knock, str(NpcBody.ZONE_BONE.get(zone, "UpperChest")), how)
 
 func enter_car(c: ArcadeCar) -> void:
 	c.freeze = false

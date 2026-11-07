@@ -11,7 +11,7 @@ extends Node
 ## sparks/dust/decal or a hit mist, hit marker, layered report with echoes.
 
 const P = preload("res://scripts/palette.gd")
-const MASK_SHOT := 1 | 4 | 8
+const MASK_SHOT := 1 | 4 | 8 | NpcBody.LAYER
 const MASK_INTERACT := 16
 
 signal hurt(amount: float)
@@ -28,7 +28,7 @@ var auto_mode := false
 var ads := 0.0
 var cooldown := 0.0
 var reloading := 0.0
-var free_ammo := 24  # used outside missions (test track)
+var free_ammo := 30  # used outside missions (test track)
 var spread_bloom := 0.0
 var gadgets: Array = []  # [{id,name,kind,count}]
 var gadget_i := 0
@@ -75,9 +75,9 @@ var _shells: Array = []     # {mi, vel, spin, life, floor, bounces}
 var _shell_i := 0
 var _fx := {}               # kind -> {list, i}
 
-# Loadout: carbine, silenced pistol, knife (slash + throws), grapple line.
-const DEFAULT_LOADOUT := ["wpn_carbine_vajra", "wpn_pistol_mriga", "wpn_knife_nakha", "wpn_grapple_garuda"]
-const SHORT := {"wpn_carbine_vajra": "Carbine", "wpn_pistol_mriga": "Pistol", "wpn_knife_nakha": "Knife", "wpn_grapple_garuda": "Line"}
+# Loadout: suppressed AK, silenced pistol, knife (slash + throws), grapple line.
+const DEFAULT_LOADOUT := ["wpn_rifle_ashani", "wpn_pistol_mriga", "wpn_knife_nakha", "wpn_grapple_garuda"]
+const SHORT := {"wpn_rifle_ashani": "AK-47", "wpn_pistol_mriga": "Pistol", "wpn_knife_nakha": "Knife", "wpn_grapple_garuda": "Line"}
 const HOOK_SPEED := 70.0
 var loadout: Array = []     # [{id, def}]
 var slot := 0
@@ -94,6 +94,10 @@ var _hook_dur := 0.1
 var _hook_from := Vector3.ZERO
 var _hook_to := Vector3.ZERO
 var _hook_hit := false
+var _hook_body: NpcBody      # the hook is flying at / stuck in this body
+var _hook_bone := "UpperChest"
+var _latched: NpcBody        # line made fast to a person
+var _tether := {}            # {body, at, t}: the person is flying into `at`
 var _winch: AudioStreamPlayer
 
 func setup(p: FpsController, lvl: Node) -> void:
@@ -114,8 +118,8 @@ func setup(p: FpsController, lvl: Node) -> void:
 		loadout.append({"id": id, "def": def})
 		_free[id] = int(def.get("mag_size", 0))
 	if loadout.is_empty():
-		loadout.append({"id": "wpn_carbine_vajra", "def": {"fire_interval": 0.1, "spread_deg": 2.0, "ads_spread_deg": 0.3, "recoil_pitch_deg": 1.0, "recoil_yaw_deg": 0.3, "range": 120.0, "noise_radius": 45.0, "reload_time": 2.0, "mag_size": 24, "has_auto": true, "name": "Carbine", "kind": "gun", "short": "Carbine"}})
-		_free["wpn_carbine_vajra"] = 24
+		loadout.append({"id": "wpn_rifle_ashani", "def": {"fire_interval": 0.1, "spread_deg": 2.4, "ads_spread_deg": 0.4, "recoil_pitch_deg": 1.3, "recoil_yaw_deg": 0.5, "range": 120.0, "noise_radius": 11.0, "reload_time": 2.4, "mag_size": 30, "has_auto": true, "suppressed": true, "name": "AK-47", "kind": "gun", "short": "AK-47"}})
+		_free["wpn_rifle_ashani"] = 30
 	weapon_id = loadout[0].id
 	weapon = loadout[0].def
 	free_ammo = _free[weapon_id]
@@ -288,45 +292,56 @@ func _build_viewmodel() -> void:
 	_vm_gun = Node3D.new()
 	_vm.add_child(_vm_gun)
 	var b := Builder.new(0.15)
-	# Bullpup carbine silhouette, cassette-futurist casing.
-	b.box(P.BEIGE, Vector3(0, 0, 0.05), Vector3(0.07, 0.11, 0.52), false)          # receiver
-	b.box(P.WARM_GREY, Vector3(0, 0.058, 0.05), Vector3(0.074, 0.008, 0.5), false) # seam band
-	b.box(P.CHARCOAL, Vector3(0, -0.01, -0.33), Vector3(0.06, 0.08, 0.26), false)   # handguard
-	for i in 6:
-		b.box(P.BLACK, Vector3(0, -0.01, -0.24 - i * 0.032), Vector3(0.064, 0.05, 0.008), false)  # cooling ribs
-	b.cyl_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.01, -0.53)), 0.017, 0.017, 0.18, 8)
-	b.cyl_xf(P.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.01, -0.63)), 0.026, 0.026, 0.05, 8)  # brake
-	b.box(P.BLACK, Vector3(0, 0.01, -0.63), Vector3(0.056, 0.008, 0.03), false)
-	b.box(P.CHARCOAL, Vector3(0, 0.085, -0.05), Vector3(0.03, 0.05, 0.36), false)  # carry rail
+	# AK-47 pattern: charcoal stamped receiver, walnut furniture, slanted
+	# stock, gas tube over the barrel, long baffled suppressor, side-rail
+	# reflex sight. Cassette touches: amber ready lamp, CRT round counter.
+	b.box(P.CHARCOAL, Vector3(0, 0.0, 0.03), Vector3(0.052, 0.07, 0.44), false)      # receiver
+	b.cyl_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.035, 0.05)), 0.026, 0.026, 0.38, 10)  # dust cover
+	b.box(P.STEEL, Vector3(0.027, 0.012, 0.03), Vector3(0.004, 0.022, 0.09), false)  # ejection port
+	b.box(P.WALNUT, Vector3(0, -0.012, -0.29), Vector3(0.058, 0.052, 0.21), false)    # lower handguard
+	for i in 3:
+		b.box(P.BLACK, Vector3(0, -0.012, -0.22 - i * 0.05), Vector3(0.06, 0.006, 0.012), false)
+	b.box(P.WALNUT, Vector3(0, 0.045, -0.28), Vector3(0.042, 0.032, 0.19), false)     # gas tube cover
+	b.cyl_xf(P.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.045, -0.42)), 0.012, 0.012, 0.08, 8)   # gas tube
+	b.box(P.STEEL, Vector3(0, 0.02, -0.43), Vector3(0.03, 0.05, 0.03), false)        # gas block
+	b.cyl_xf(P.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.01, -0.47)), 0.011, 0.011, 0.1, 8)     # barrel
+	b.box(P.CHARCOAL, Vector3(0, 0.05, -0.47), Vector3(0.01, 0.035, 0.012), false)   # front sight post
+	b.cyl_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.01, -0.66)), 0.027, 0.027, 0.3, 12)  # suppressor
+	for i in 4:
+		b.cyl_xf(P.BLACK, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.01, -0.54 - i * 0.075)), 0.0285, 0.0285, 0.008, 12)
+	b.cyl_xf(P.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.01, -0.812)), 0.024, 0.02, 0.008, 12)
+	b.box(P.CHARCOAL, Vector3(0, 0.06, -0.12), Vector3(0.03, 0.012, 0.06), false)    # rear sight leaf
+	# Side-rail mount up to the reflex sight.
+	b.box(P.CHARCOAL, Vector3(-0.03, 0.03, -0.05), Vector3(0.008, 0.05, 0.1), false)
+	b.box(P.CHARCOAL, Vector3(-0.014, 0.09, -0.05), Vector3(0.04, 0.06, 0.03), false)
 	_build_sight(b)
-	b.box(P.CHARCOAL, Vector3(0, -0.1, -0.11), Vector3(0.04, 0.12, 0.05), false)   # grip
-	b.box(P.CHARCOAL, Vector3(0, -0.06, -0.06), Vector3(0.012, 0.05, 0.08), false) # trigger guard
-	b.box(P.CHARCOAL, Vector3(0, 0.0, 0.33), Vector3(0.072, 0.12, 0.04), false)    # butt pad
-	b.box(P.STEEL, Vector3(0.036, 0.03, 0.06), Vector3(0.004, 0.03, 0.07), false)  # ejection port cover
-	for i in 5:
-		b.box(P.BLACK, Vector3(0.036, 0.02, -0.04 + i * 0.022), Vector3(0.004, 0.05, 0.01), false)  # vents
-	b.box(P.CRT, Vector3(-0.037, 0.02, 0.16), Vector3(0.004, 0.045, 0.07), false)  # side CRT
-	b.box(P.AMBER, Vector3(0.037, 0.04, 0.2), Vector3(0.006, 0.014, 0.014), false) # ready lamp
-	b.cyl_xf(P.BLACK, Transform3D(Basis(Vector3.FORWARD, PI / 2), Vector3(0.05, -0.03, 0.22)), 0.006, 0.006, 0.08, 6) # cable
+	b.box_xf(P.WALNUT, Transform3D(Basis(Vector3.RIGHT, 0.32), Vector3(0, -0.085, 0.13)), Vector3(0.034, 0.11, 0.045))  # pistol grip
+	b.box(P.CHARCOAL, Vector3(0, -0.045, 0.07), Vector3(0.01, 0.025, 0.08), false)   # trigger guard
+	b.box_xf(P.WALNUT, Transform3D(Basis(Vector3.RIGHT, 0.12), Vector3(0, -0.02, 0.4)), Vector3(0.045, 0.085, 0.3))  # stock
+	b.box_xf(P.STEEL, Transform3D(Basis(Vector3.RIGHT, 0.12), Vector3(0, -0.04, 0.55)), Vector3(0.048, 0.11, 0.012)) # butt plate
+	b.box(P.CRT, Vector3(-0.027, 0.0, 0.12), Vector3(0.004, 0.035, 0.07), false)     # side CRT
+	b.box(P.AMBER, Vector3(0.027, 0.02, 0.17), Vector3(0.005, 0.012, 0.012), false)  # ready lamp
+	b.cyl_xf(P.BLACK, Transform3D(Basis(Vector3.FORWARD, PI / 2), Vector3(0.04, -0.02, 0.2)), 0.005, 0.005, 0.07, 6) # cable
 	var mi := MeshInstance3D.new()
 	mi.mesh = b.mesh()
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_vm_gun.add_child(mi)
 	_build_sight_glass()
-	# Magazine as its own node so reloads can pull it.
+	# Curved thirty-round magazine as its own node so reloads can pull it.
 	_mag = Node3D.new()
-	_mag.position = Vector3(0, -0.11, 0.12)
+	_mag.position = Vector3(0, -0.04, -0.06)
 	var mb := Builder.new(0.1)
-	mb.box(P.WARM_GREY, Vector3.ZERO, Vector3(0.045, 0.14, 0.08), false)
-	mb.box(P.CHARCOAL, Vector3(0, -0.075, 0), Vector3(0.05, 0.014, 0.085), false)
-	mb.box(P.BRASS, Vector3(0, 0.072, 0.0), Vector3(0.012, 0.006, 0.05), false)
+	for i in 5:
+		var r := Basis(Vector3.RIGHT, 0.1 + i * 0.1)
+		mb.box_xf(P.WARM_GREY, Transform3D(r, Vector3(0, -0.02 - i * 0.034, -0.01 - i * i * 0.006)), Vector3(0.028, 0.04, 0.07))
+	mb.box_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, 0.55), Vector3(0, -0.185, -0.11)), Vector3(0.032, 0.014, 0.074))
 	var mmi := MeshInstance3D.new()
 	mmi.mesh = mb.mesh()
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_mag.add_child(mmi)
 	_vm_gun.add_child(_mag)
 	_selector = Node3D.new()
-	_selector.position = Vector3(0.038, -0.02, 0.08)
+	_selector.position = Vector3(0.028, 0.0, 0.06)
 	var sb := Builder.new(0.0)
 	sb.cyl_xf(P.BRASS, Transform3D(Basis(Vector3.FORWARD, PI / 2), Vector3.ZERO), 0.014, 0.014, 0.01, 10)
 	sb.box(P.CHARCOAL, Vector3(0.007, 0.008, 0), Vector3(0.004, 0.016, 0.004), false)
@@ -340,7 +355,7 @@ func _build_viewmodel() -> void:
 	_ammo_label.pixel_size = 0.0006
 	_ammo_label.modulate = Color("#9FE8A8")
 	_ammo_label.outline_size = 0
-	_ammo_label.position = Vector3(-0.0405, 0.02, 0.16)
+	_ammo_label.position = Vector3(-0.0295, 0.0, 0.12)
 	_ammo_label.rotation = Vector3(0, -PI / 2, 0)
 	_ammo_label.shaded = false
 	_vm_gun.add_child(_ammo_label)
@@ -350,7 +365,7 @@ func _build_viewmodel() -> void:
 	_flash_light.omni_attenuation = 1.6
 	_flash_light.light_energy = 0.0
 	_flash_light.shadow_enabled = false
-	_flash_light.position = Vector3(0, 0.02, -0.75)
+	_flash_light.position = Vector3(0, 0.02, -0.9)
 	_vm_gun.add_child(_flash_light)
 	# Muzzle flash: a front-facing disc plus two crossed elongated petals.
 	var fm := glow_mat(Color(1.0, 0.78, 0.42, 1.0))
@@ -371,19 +386,20 @@ func _build_viewmodel() -> void:
 	am.surface_set_material(0, fm)
 	_flash = MeshInstance3D.new()
 	_flash.mesh = am
-	_flash.position = Vector3(0, 0.01, -0.67)
+	_flash.position = Vector3(0, 0.01, -0.82)
 	_flash.visible = false
 	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_vm_gun.add_child(_flash)
 	_vm.visible = false
-	var carbine := {"node": _vm_gun, "mag": _mag, "selector": _selector, "label": _ammo_label,
-		"flash": Vector3(0, 0.01, -0.67), "sight": SIGHT_CENTER, "eye": SIGHT_EYE_DIST,
-		"hip": Vector3(0.19, -0.19, -0.42), "ads": true, "flash_scale": 1.0, "mag_rest": Vector3(0, -0.11, 0.12)}
+	var rifle := {"node": _vm_gun, "mag": _mag, "selector": _selector, "label": _ammo_label,
+		"flash": Vector3(0, 0.01, -0.82), "sight": SIGHT_CENTER, "eye": SIGHT_EYE_DIST,
+		"hip": Vector3(0.19, -0.19, -0.4), "ads": true, "flash_scale": 0.35, "mag_rest": Vector3(0, -0.04, -0.06),
+		"pitch": 0.72}
 	var have_carbine := false
 	for e in loadout:
 		var kind := str(e.def.get("kind", "gun"))
-		if kind == "gun" and not e.def.get("suppressed", false) and not have_carbine:
-			_models[e.id] = carbine
+		if kind == "gun" and e.def.get("has_auto", false) and not have_carbine:
+			_models[e.id] = rifle
 			have_carbine = true
 		elif kind == "gun":
 			_models[e.id] = _build_pistol()
@@ -788,6 +804,11 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e.is_action_pressed("aim") and drawn and _kind() == "melee":
 		_throw_knife()
 	elif e.is_action_pressed("aim") and _kind() == "grapple":
+		if _latched:
+			_tether_to_aim()
+		else:
+			_release_line()
+	elif e.is_action_pressed("reload") and _kind() == "grapple":
 		_release_line()
 	elif e.is_action_pressed("reload"):
 		_reload()
@@ -1036,30 +1057,19 @@ func _fire() -> void:
 	dir = (basis * Vector3(cos(a) * tan(rr), sin(a) * tan(rr), -1.0)).normalized()
 	var from := cam.global_position
 	var to := from + dir * float(weapon.range)
-	var q := PhysicsRayQueryParameters3D.create(from, to, MASK_SHOT, [player.get_rid()])
-	var hit := player.get_world_3d().direct_space_state.intersect_ray(q)
+	var hit := _shot_ray(from, to)
 	var muzzle := _flash.global_position
 	var end := to
 	if not hit.is_empty():
 		end = hit.position
 		var col: Object = hit.collider
-		if col is Npc:
-			var npc := col as Npc
-			npc.set_meta("knock", 18.0 if weapon.get("suppressed", false) else 30.0)
-			npc.set_meta("knock_how", "die")
-			var head: bool = hit.position.y > npc.global_position.y + 1.48
-			var dmg: float = Game.sim.weapon_damage(weapon_id, from.distance_to(hit.position), head)
-			var was_alive := npc.alive
-			var killed := npc.apply_damage(dmg, player.global_position, head)
-			_burst("mist", hit.position, -dir + Vector3.UP * 0.2)
-			Game.play_3d("flesh", hit.position, 0)
-			if was_alive:
-				hit_t = 0.28 if killed else 0.16
-				hit_kill = killed
-				hit_head = head
-				Game.play_2d("hitmark", -6 if not killed else -2, 0.8 if killed else (1.25 if head else 1.0))
-			if killed and level and level.has_method("on_npc_killed"):
-				level.on_npc_killed(npc)
+		if col is Npc or (col is PhysicalBone3D and col.has_meta("npc_body")):
+			var res := _hit_body(hit, dir, from, weapon_id, 18.0 if weapon.get("suppressed", false) else 30.0, "die")
+			if res.was_alive:
+				hit_t = 0.28 if res.killed else 0.16
+				hit_kill = res.killed
+				hit_head = res.zone == "head"
+				Game.play_2d("hitmark", -6 if not res.killed else -2, 0.8 if res.killed else (1.25 if hit_head else 1.0))
 		else:
 			var n: Vector3 = hit.normal
 			_mark(hit.position, n)
@@ -1074,7 +1084,7 @@ func _fire() -> void:
 	if not sup:
 		tracer(muzzle, end)
 	# Sound: the report, or the suppressor's cough.
-	Game.play_2d("silenced" if sup else "shot", -2 if sup else 0, randf_range(0.94, 1.06))
+	Game.play_2d("silenced" if sup else "shot", -2 if sup else 0, randf_range(0.94, 1.06) * float(_cfg.get("pitch", 1.0)))
 	# Flash (a suppressor leaves only a faint spark).
 	var fsc := float(_cfg.get("flash_scale", 1.0))
 	_flash.visible = fsc > 0.0
@@ -1099,6 +1109,67 @@ func _fire() -> void:
 	player.apply_recoil(rp, ry)
 	_recoil_debt += rp * 0.55
 	get_tree().call_group("npc", "hear_noise", player.global_position, float(weapon.noise_radius))
+
+## A shot ray that passes between the limbs of a person goes on through.
+func _shot_ray(from: Vector3, to: Vector3) -> Dictionary:
+	var ex: Array[RID] = [player.get_rid()]
+	var space := player.get_world_3d().direct_space_state
+	for i in 3:
+		var q := PhysicsRayQueryParameters3D.create(from, to, MASK_SHOT, ex)
+		var hit := space.intersect_ray(q)
+		if hit.is_empty() or not (hit.collider is Npc):
+			return hit
+		var body := (hit.collider as Npc).get_node_or_null("Visual") as NpcBody
+		if body == null:
+			return hit
+		var z := body.zone_for_ray(from, (to - from).normalized())
+		if not z.miss:
+			hit["zone"] = z.zone
+			hit["bone"] = z.bone
+			hit["position"] = z.point
+			return hit
+		ex.append((hit.collider as Npc).get_rid())
+	return {}
+
+## A projectile (bullet or blade) into a person, standing or on the ground:
+## damage by body part, wound mark, blood, push on a ragdoll.
+func _hit_body(hit: Dictionary, dir: Vector3, from: Vector3, wid: String, knock: float, how: String) -> Dictionary:
+	var col: Object = hit.collider
+	var npc: Npc
+	var body: NpcBody
+	var zone := str(hit.get("zone", "chest"))
+	var bone := str(hit.get("bone", "UpperChest"))
+	if col is PhysicalBone3D:
+		body = col.get_meta("npc_body")
+		npc = body.npc
+		bone = str(col.get("bone_name"))
+		zone = str(NpcBody.BONE_ZONE.get(bone, "chest"))
+		(col as PhysicalBone3D).apply_impulse(dir * knock * 0.5, hit.position - (col as PhysicalBone3D).global_position)
+	else:
+		npc = col as Npc
+		body = npc.get_node_or_null("Visual") as NpcBody
+	var res := {"was_alive": npc != null and npc.alive, "killed": false, "zone": zone}
+	_burst("mist", hit.position, -dir + Vector3.UP * 0.2)
+	Game.play_3d("flesh", hit.position, 0)
+	if body:
+		body.mark_wound(hit.position, -dir, bone)
+	if npc == null or not npc.alive:
+		return res
+	npc.set_meta("knock", knock)
+	npc.set_meta("knock_how", how)
+	var dmg: float = Game.sim.weapon_damage(wid, from.distance_to(hit.position), zone == "head")
+	res.killed = npc.apply_hit(dmg, player.global_position, zone)
+	if res.killed and level and level.has_method("on_npc_killed"):
+		level.on_npc_killed(npc)
+	return res
+
+## Where a person is now: standing, or wherever the body lies.
+static func _npc_pos(npc: Npc) -> Vector3:
+	if npc.is_downed():
+		var b := npc.get_node_or_null("Visual") as NpcBody
+		if b:
+			return b.center()
+	return npc.global_position
 
 # ------------------------------------------------------------- interaction
 
@@ -1125,9 +1196,10 @@ func _update_focus() -> void:
 		var npc := n as Npc
 		if npc == null or not npc.alive:
 			continue
-		var d := npc.global_position.distance_to(player.global_position)
+		var at := _npc_pos(npc)
+		var d := at.distance_to(player.global_position)
 		if d < best:
-			var to := (npc.global_position - player.global_position)
+			var to := (at - player.global_position)
 			to.y = 0
 			if to.normalized().dot(Vector3(dir.x, 0, dir.z).normalized()) > 0.6 and npc.can_takedown(player.global_position):
 				best = d
@@ -1139,9 +1211,12 @@ func _takedown() -> void:
 	if takedown_target == null:
 		return
 	var npc := takedown_target
-	npc.set_meta("knock", 6.0)
-	npc.set_meta("knock_how", "limp")
+	npc.set_meta("knock", 5.0)
+	npc.set_meta("knock_how", "limp" if npc.is_downed() else "takedown")
 	npc.take_down()
+	_krv += Vector3(-4.0, 0, 3.0)
+	_kpv += Vector3(0, -0.3, 0.6)
+	_trauma = minf(_trauma + 0.2, 0.5)
 	Game.play_3d("thud", npc.global_position, -2)
 	if level and level.has_method("on_npc_killed"):
 		level.on_npc_killed(npc)
@@ -1295,7 +1370,7 @@ func _slash() -> void:
 		var npc := n as Npc
 		if npc == null or not npc.alive:
 			continue
-		var to := npc.global_position - player.global_position
+		var to := _npc_pos(npc) - player.global_position
 		var d := Vector2(to.x, to.z).length()
 		if d < best_d and absf(to.y) < 1.5 and Vector3(to.x, 0, to.z).normalized().dot(flat) > 0.55:
 			best = npc
@@ -1377,8 +1452,7 @@ func _update_knives(dt: float) -> void:
 		k.vel = v
 		var from := node.global_position
 		var to := from + v * dt
-		var q := PhysicsRayQueryParameters3D.create(from, to, MASK_SHOT, [player.get_rid()])
-		var hit := space.intersect_ray(q)
+		var hit := _shot_ray(from, to)
 		if hit.is_empty():
 			node.global_position = to
 			node.rotate_object_local(Vector3.RIGHT, -dt * 22.0)
@@ -1389,24 +1463,16 @@ func _update_knives(dt: float) -> void:
 		k.stuck = true
 		k.age = 0.0
 		var col: Object = hit.collider
-		if col is Npc:
-			var npc := col as Npc
-			var head: bool = hit.position.y > npc.global_position.y + 1.48
-			npc.set_meta("knock", 14.0)
-			npc.set_meta("knock_how", "die")
-			var was_alive := npc.alive
-			var killed := npc.apply_damage(Game.sim.weapon_damage(k.id, from.distance_to(player.global_position), head), player.global_position, head)
+		if col is Npc or (col is PhysicalBone3D and col.has_meta("npc_body")):
+			var res := _hit_body(hit, v.normalized(), from, k.id, 14.0, "die")
 			Game.play_3d("stab", hit.position, 0)
-			_burst("mist", hit.position, -v.normalized())
-			if was_alive:
-				hit_t = 0.28 if killed else 0.16
-				hit_kill = killed
-				hit_head = head
-				Game.play_2d("hitmark", -2 if killed else -6)
-			if killed and level and level.has_method("on_npc_killed"):
-				level.on_npc_killed(npc)
+			if res.was_alive:
+				hit_t = 0.28 if res.killed else 0.16
+				hit_kill = res.killed
+				hit_head = res.zone == "head"
+				Game.play_2d("hitmark", -2 if res.killed else -6)
 			# Drop at their feet to be recovered.
-			node.global_position = Vector3(hit.position.x, npc.global_position.y + 0.05, hit.position.z)
+			node.global_position = Vector3(hit.position.x, player.global_position.y + 0.05, hit.position.z)
 			node.global_basis = Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, -PI / 2)
 		else:
 			node.global_position = hit.position - v.normalized() * 0.06
@@ -1417,21 +1483,34 @@ func _update_knives(dt: float) -> void:
 
 # ------------------------------------------------------------- grapple line
 
-## Fire the hook at whatever world surface is under the crosshair. While
-## pulling, LMB or RMB lets go; so does jumping.
+## Fire the hook at whatever is under the crosshair. A wall or a roof: it
+## winds you in (jump, LMB or RMB lets go). A person: the hook sticks in
+## them. Then LMB hauls them flying back to you, or aim at something else
+## and RMB makes the line fast there: they fly into it and crash. R drops it.
+const LINE_MASK := 1 | 4 | 8 | NpcBody.LAYER
+
 func _fire_grapple() -> void:
 	cooldown = 0.35
-	if player.is_grappling() or _hook_t >= 0.0:
+	if _latched:
+		_yank()
+		return
+	if player.is_grappling() or _hook_t >= 0.0 or not _tether.is_empty():
 		_release_line()
 		return
 	var dir := player.get_look_dir()
 	var from := cam.global_position
 	var rng := float(weapon.get("range", 38.0))
-	var q := PhysicsRayQueryParameters3D.create(from, from + dir * rng, 1, [player.get_rid()])
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * rng, LINE_MASK, [player.get_rid()])
 	var hit := player.get_world_3d().direct_space_state.intersect_ray(q)
+	_hook_body = null
+	if not hit.is_empty():
+		_hook_body = _body_of(hit.collider)
+		if _hook_body:
+			var z := _hook_body.zone_for_ray(from, dir)
+			_hook_bone = str(hit.collider.get("bone_name")) if hit.collider is PhysicalBone3D else str(z.bone)
 	_hook_from = _flash.global_position
-	_hook_hit = not hit.is_empty()
-	_hook_to = hit.position if _hook_hit else from + dir * rng
+	_hook_hit = not hit.is_empty() and (_hook_body != null or (int(hit.collider.get("collision_layer")) & 1) != 0)
+	_hook_to = hit.position if not hit.is_empty() else from + dir * rng
 	_hook_dur = maxf(_hook_from.distance_to(_hook_to) / HOOK_SPEED, 0.05)
 	_hook_t = 0.0
 	_hook.visible = true
@@ -1440,10 +1519,124 @@ func _fire_grapple() -> void:
 	_krv += Vector3(2.5, 0, 0)
 	_trauma = minf(_trauma + 0.1, 0.4)
 
+## The person a collider belongs to (standing capsule or a ragdoll bone).
+func _body_of(col: Object) -> NpcBody:
+	if col is Npc:
+		return (col as Npc).get_node_or_null("Visual") as NpcBody
+	if col is PhysicalBone3D and col.has_meta("npc_body"):
+		var b: NpcBody = col.get_meta("npc_body")
+		return b if is_instance_valid(b) and b.is_physical() else null
+	return null
+
+## Ballistic launch velocity from `a` to land at `b` after `t` seconds.
+static func _launch(a: Vector3, b: Vector3, t: float) -> Vector3:
+	return (b - a) / t + Vector3.UP * 0.5 * 9.8 * t
+
+## Haul the hooked person in: off their feet, flying back to land at yours.
+func _yank() -> void:
+	var body := _latched
+	_latched = null
+	if not is_instance_valid(body):
+		_release_line()
+		return
+	var npc := body.npc
+	var flat := player.get_look_dir()
+	flat.y = 0.0
+	flat = flat.normalized()
+	var land := player.global_position + flat * 2.4 + Vector3.UP * 0.15
+	var start := body.center()
+	var t := clampf(start.distance_to(land) / 15.0, 0.35, 1.0)
+	if npc and npc.alive and not npc.is_downed():
+		npc.set_meta("knock", 10.0)
+		npc.set_meta("knock_how", "die")
+		npc.knock_down(8.0, player.global_position)
+	body.fling(_launch(start, land, t))
+	Game.play_2d("winch", -2, 1.4)
+	Game.play_3d("swish", start, 0, 4.0, 0.7)
+	_krv += Vector3(-6.0, 0, 0)
+	_kpv += Vector3(0, 0, 1.4)
+	_trauma = minf(_trauma + 0.3, 0.7)
+	_tether = {"body": body, "at": Vector3.INF, "t": 0.0, "hand": true}
+	if not body.crashed.is_connected(_on_crash):
+		body.crashed.connect(_on_crash.bind(body))
+
+## Make the line fast to whatever is under the crosshair: the hooked person
+## flies into it.
+func _tether_to_aim() -> void:
+	var body := _latched
+	if not is_instance_valid(body):
+		_release_line()
+		return
+	var dir := player.get_look_dir()
+	var from := cam.global_position
+	var rng := float(weapon.get("range", 38.0)) * 1.5
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * rng, LINE_MASK, [player.get_rid()])
+	var hit := player.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		Game.play_2d("dry", -6)
+		return
+	var other := _body_of(hit.collider)
+	if other == body:
+		return
+	_latched = null
+	var at: Vector3 = hit.position
+	var npc := body.npc
+	if npc and npc.alive and not npc.is_downed():
+		npc.set_meta("knock", 10.0)
+		npc.set_meta("knock_how", "die")
+		npc.knock_down(8.0, player.global_position)
+	var start := body.center()
+	var speed := 24.0
+	var dist := start.distance_to(at)
+	# Fast and flat: barely any arc, straight into it.
+	var v := (at - start) / maxf(dist / speed, 0.08) + Vector3.UP * minf(dist * 0.15, 3.0)
+	body.fling(v)
+	if other:
+		# Two people: they meet in the middle.
+		var on := other.npc
+		if on and on.alive and not on.is_downed():
+			on.knock_down(8.0, player.global_position)
+		other.fling((start - other.center()).normalized() * 9.0 + Vector3.UP * 2.0)
+		if not other.crashed.is_connected(_on_crash):
+			other.crashed.connect(_on_crash.bind(other))
+	_tether = {"body": body, "at": at, "t": 0.0, "hand": false, "anchor": hit.collider}
+	_hook.global_position = at
+	_hook.visible = true
+	Game.play_2d("grapple", -2, 0.85)
+	Game.play_3d("impact", at, -4, 4.0, 1.3)
+	Game.play_2d("winch", -2, 1.6)
+	_krv += Vector3(3.0, 0, 0)
+	if not body.crashed.is_connected(_on_crash):
+		body.crashed.connect(_on_crash.bind(body))
+
+func _on_crash(impact: float, at: Vector3, body: NpcBody) -> void:
+	Game.play_3d("thud", at, 2, 6.0, randf_range(0.8, 1.0))
+	Game.play_3d("impact", at, 0, 6.0, 0.7)
+	_burst("dust", at, Vector3.UP)
+	if player.global_position.distance_to(at) < 8.0:
+		_trauma = minf(_trauma + 0.25, 0.8)
+	var npc := body.npc if is_instance_valid(body) else null
+	if npc and npc.alive:
+		npc.set_meta("knock", 4.0)
+		npc.set_meta("knock_how", "limp")
+		var killed := npc.crash(impact, at)
+		if killed:
+			hit_t = 0.28
+			hit_kill = true
+			hit_head = false
+			Game.play_2d("hitmark", -2, 0.8)
+			if level and level.has_method("on_npc_killed"):
+				level.on_npc_killed(npc)
+	if not _tether.is_empty() and _tether.body == body:
+		_release_line()
+
 func _release_line() -> void:
 	if player and player.is_grappling():
 		player.stop_grapple()
 	_hook_t = -1.0
+	_hook_body = null
+	_latched = null
+	_tether = {}
 	if _hook:
 		_hook.visible = false
 	if _rope:
@@ -1458,21 +1651,63 @@ func _update_line(dt: float) -> void:
 	if _hook_t >= 0.0:
 		_hook_t += dt
 		var k := clampf(_hook_t / _hook_dur, 0.0, 1.0)
-		var at := _hook_from.lerp(_hook_to, k)
+		var to := _hook_to
+		if is_instance_valid(_hook_body):
+			to = _hook_body.bone_position(_hook_bone)   # the target may move
+		var at := _hook_from.lerp(to, k)
 		_hook.global_position = at
-		var d := (_hook_to - _hook_from).normalized()
+		var d := (to - _hook_from).normalized()
 		if d.length() > 0.1:
 			_hook.global_basis = Basis.looking_at(d, Vector3.UP if absf(d.y) < 0.95 else Vector3.RIGHT)
 		_draw_rope(hand, at)
 		if k >= 1.0:
 			_hook_t = -1.0
-			if _hook_hit:
+			if is_instance_valid(_hook_body):
+				_latched = _hook_body
+				_hook_body = null
+				Game.play_3d("stab", to, -2, 4.0, 1.2)
+				_burst("mist", to, (hand - to).normalized())
+				var n := _latched.npc
+				if n and n.alive:
+					n.hear_noise(player.global_position, 30.0)
+				message.emit("Line fast.  LMB: haul in   RMB at a target: tether   R: let go")
+			elif _hook_hit:
 				if Game.debug.has("fire"):
 					print("grapple anchor ", _hook_to)
 				player.start_grapple(_hook_to)
 				Game.play_3d("impact", _hook_to, -4, 4.0, 1.4)
 				_winch.play()
 			else:
+				_release_line()
+		return
+	if _latched:
+		if not is_instance_valid(_latched) or _latched.global_position.distance_to(player.global_position) > float(weapon.get("range", 38.0)) * 1.6:
+			_release_line()
+			return
+		var at := _latched.bone_position(_hook_bone)
+		_hook.global_position = at
+		_draw_rope(hand, at)
+		return
+	if not _tether.is_empty():
+		var body: NpcBody = _tether.body
+		_tether.t += dt
+		if not is_instance_valid(body) or _tether.t > 3.0:
+			_release_line()
+			return
+		var at := body.bone_position(_hook_bone)
+		if _tether.hand:
+			_hook.global_position = at
+			_draw_rope(hand, at)
+			if not body.flying() and _tether.t > 0.3:
+				_release_line()
+		else:
+			# The line runs from the person to the anchor; keep it taut.
+			var anchor: Vector3 = _tether.at
+			_hook.global_position = anchor
+			_draw_rope(at, anchor)
+			if body.flying():
+				body.pull_toward(anchor, 22.0, dt)
+			elif _tether.t > 0.3:
 				_release_line()
 		return
 	if player.is_grappling():

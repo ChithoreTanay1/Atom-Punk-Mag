@@ -4,10 +4,11 @@
 //!
 //! Signals are emitted deferred so GDScript handlers can safely call back in.
 
-use godot::classes::{CharacterBody3D, ICharacterBody3D, Node3D, PhysicsRayQueryParameters3D};
+use godot::classes::{CharacterBody3D, ICharacterBody3D, PhysicsRayQueryParameters3D};
 use godot::prelude::*;
 
 use magadha_core::awareness::{AlertState, Awareness, AwarenessEvent, AwarenessParams, Sighting};
+use magadha_core::injury::{HitZone, Reaction, Wounds};
 use magadha_core::rng::Rng;
 
 use crate::player::{FpsController, LAYER_NPC, LAYER_VEHICLE, LAYER_WORLD};
@@ -68,13 +69,11 @@ pub struct Npc {
     sees_player: bool,
     suspicious_timer: f32,
     rng: Rng,
-    phase: f32,
-    death_t: f32,
     last_hit_from: Vector3,
     last_hit_head: bool,
+    last_hit_zone: GString,
     look_timer: f32,
-    visual: Option<Gd<Node3D>>,
-    limbs: [Option<Gd<Node3D>>; 4],
+    wounds: Wounds,
     base: Base<CharacterBody3D>,
 }
 
@@ -108,13 +107,11 @@ impl ICharacterBody3D for Npc {
             sees_player: false,
             suspicious_timer: 0.0,
             rng: Rng::new(1),
-            phase: 0.0,
-            death_t: 0.0,
             last_hit_from: Vector3::ZERO,
             last_hit_head: false,
+            last_hit_zone: GString::from("chest"),
             look_timer: 0.0,
-            visual: None,
-            limbs: [None, None, None, None],
+            wounds: Wounds::default(),
             base,
         }
     }
@@ -131,16 +128,16 @@ impl ICharacterBody3D for Npc {
             b.set_floor_snap_length(0.4);
             b.set_floor_max_angle(50f32.to_radians());
         }
-        self.visual = self.base().get_node_or_null("Visual").and_then(|n| n.try_cast::<Node3D>().ok());
-        for (i, n) in ["Visual/LegL", "Visual/LegR", "Visual/ArmL", "Visual/ArmR"].iter().enumerate() {
-            self.limbs[i] = self.base().get_node_or_null(*n).and_then(|n| n.try_cast::<Node3D>().ok());
-        }
     }
 
     fn physics_process(&mut self, delta: f64) {
         let dt = delta as f32;
         if !self.alive {
-            self.animate_death(dt);
+            return;
+        }
+        self.wounds.tick(dt);
+        if self.wounds.downed {
+            self.tick_downed(dt);
             return;
         }
         let ai = world().ai.clone();
@@ -162,7 +159,6 @@ impl ICharacterBody3D for Npc {
 
         self.think(dt);
         self.locomote(dt);
-        self.animate(dt);
     }
 }
 
@@ -182,6 +178,10 @@ impl Npc {
     fn died(silent: bool);
     #[signal]
     fn reached_goal();
+    /// A hit that did not kill: zone ("head", "thigh_l"...), reaction
+    /// ("flinch", "head", "arm", "stumble", "down") and where it came from.
+    #[signal]
+    fn wounded(zone: GString, reaction: GString, from: Vector3);
 
     fn emit(&mut self, sig: &str, args: &[Variant]) {
         let mut v = vec![sig.to_variant()];
@@ -281,6 +281,7 @@ impl Npc {
     #[func]
     fn can_takedown(&self, from: Vector3) -> bool {
         if !self.alive { return false; }
+        if self.wounds.downed { return true; }
         let pos = self.base().get_global_position();
         let fwd = -self.base().get_global_transform().basis.col_c();
         let to_attacker = Vector3::new(from.x - pos.x, 0.0, from.z - pos.z).normalized_or_zero();
@@ -300,21 +301,120 @@ impl Npc {
         self.last_hit_head
     }
 
+    /// Body part the last hit landed on ("head", "chest", "foot_l"...).
+    #[func]
+    fn get_last_hit_zone(&self) -> GString {
+        self.last_hit_zone.clone()
+    }
+
     #[func]
     fn take_down(&mut self) {
+        self.last_hit_zone = GString::from("neck");
         self.die(true);
     }
 
-    /// Returns true if this killed the NPC.
     #[func]
-    pub(crate) fn apply_damage(&mut self, amount: f32, from: Vector3, headshot: bool) -> bool {
+    fn is_downed(&self) -> bool {
+        self.wounds.downed
+    }
+
+    /// On one knee after a leg hit (seconds left; 0 when standing).
+    #[func]
+    fn get_stumble(&self) -> f32 {
+        self.wounds.stumble_left()
+    }
+
+    /// Hits per limb, for the body's limp and dead arm: [leg_l, leg_r, arm_l, arm_r].
+    #[func]
+    fn get_wounds(&self) -> PackedInt32Array {
+        PackedInt32Array::from(&[
+            self.wounds.leg_hits[0] as i32,
+            self.wounds.leg_hits[1] as i32,
+            self.wounds.arm_hits[0] as i32,
+            self.wounds.arm_hits[1] as i32,
+        ])
+    }
+
+    /// Guard has a target: weapon up.
+    #[func]
+    fn in_combat(&self) -> bool {
+        self.brain == Brain::Combat || (self.role.to_string() == "guard" && self.awareness.state == AlertState::Hostile)
+    }
+
+    /// Hauled off its feet by the grapple line: down for good, still alive.
+    /// `damage` may kill.
+    #[func]
+    fn knock_down(&mut self, damage: f32, from: Vector3) -> bool {
         if !self.alive { return false; }
         self.last_hit_from = from;
-        self.last_hit_head = headshot;
-        self.health -= amount * if headshot { 1.0 } else { 1.0 };
+        self.last_hit_head = false;
+        self.last_hit_zone = GString::from("chest");
+        self.health -= damage;
         if self.health <= 0.0 {
             self.die(false);
             return true;
+        }
+        if !self.wounds.downed {
+            self.wounds.knock_down();
+            self.go_down();
+        }
+        let role = self.role.to_string();
+        if role == "guard" || role == "governor" {
+            let ai = world().ai.clone();
+            self.awareness.force_hostile(&ai, Some(arr(from)));
+            if self.radio_timer < 0.0 { self.radio_timer = 1.5; }
+        }
+        false
+    }
+
+    /// Thrown into something at `speed` m/s (the grapple tether): damage
+    /// from `crash_damage_per_ms` in wounds.ron. Returns true if it killed.
+    #[func]
+    fn crash(&mut self, speed: f32, at: Vector3) -> bool {
+        let dmg = speed * world().wounds.crash_damage_per_ms;
+        self.knock_down(dmg, at)
+    }
+
+    /// A hit on body part `zone` (see `HitZone::parse`). Returns true if it killed.
+    #[func]
+    fn apply_hit(&mut self, amount: f32, from: Vector3, zone: GString) -> bool {
+        let z = HitZone::parse(&zone.to_string()).unwrap_or(HitZone::Chest);
+        self.hit_zone(amount, from, z, zone)
+    }
+
+    /// Head-or-chest entry point (cars, debug).
+    #[func]
+    pub(crate) fn apply_damage(&mut self, amount: f32, from: Vector3, headshot: bool) -> bool {
+        let (z, name) = if headshot { (HitZone::Head, "head") } else { (HitZone::Chest, "chest") };
+        self.hit_zone(amount, from, z, GString::from(name))
+    }
+
+    fn hit_zone(&mut self, amount: f32, from: Vector3, zone: HitZone, name: GString) -> bool {
+        if !self.alive { return false; }
+        self.last_hit_from = from;
+        self.last_hit_head = zone == HitZone::Head;
+        self.last_hit_zone = name.clone();
+        let p = world().wounds.clone();
+        let was_down = self.wounds.downed;
+        let out = self.wounds.hit(&p, zone, amount);
+        self.health -= out.damage;
+        if out.lethal || self.health <= 0.0 {
+            self.die(false);
+            return true;
+        }
+        if self.wounds.downed && !was_down {
+            self.go_down();
+        }
+        let reaction = match out.reaction {
+            Reaction::Down if was_down => "flinch",
+            r => r.name(),
+        };
+        self.emit("wounded", &[name.to_variant(), reaction.to_variant(), from.to_variant()]);
+        if self.wounds.downed {
+            // Still calls it in from the ground.
+            let role = self.role.to_string();
+            if (role == "guard" || role == "governor") && self.radio_timer < 0.0 { self.radio_timer = 1.5; }
+            return false;
         }
         let ai = world().ai.clone();
         let role = self.role.to_string();
@@ -352,12 +452,38 @@ impl Npc {
         self.set_dest(target, true);
     }
 
+    /// Legs gone (or hauled off its feet): lies on the ground, bleeding.
+    fn go_down(&mut self) {
+        self.dest = None;
+        self.route.clear();
+        self.patrol.clear();
+        self.speaking = false;
+        self.sees_player = false;
+        let mut b = self.base_mut();
+        b.set_collision_layer(0);
+        b.set_velocity(Vector3::ZERO);
+    }
+
+    fn tick_downed(&mut self, dt: f32) {
+        let bleed = world().wounds.downed_bleed;
+        self.health -= bleed * dt;
+        if self.radio_timer > 0.0 {
+            self.radio_timer -= dt;
+            if self.radio_timer <= 0.0 {
+                self.emit("alarm_call", &[]);
+            }
+        }
+        if self.health <= 0.0 {
+            self.last_hit_zone = GString::from("chest");
+            self.die(true);
+        }
+    }
+
     fn die(&mut self, silent: bool) {
         if !self.alive { return; }
         self.alive = false;
         self.brain = Brain::Dead;
         self.speaking = false;
-        self.death_t = 0.0;
         let id = self.base().instance_id().to_i64();
         let pos = self.base().get_global_position();
         world().corpses.push((id, arr(pos)));
@@ -367,17 +493,6 @@ impl Npc {
             b.set_velocity(Vector3::ZERO);
         }
         self.emit("died", &[silent.to_variant()]);
-    }
-
-    fn animate_death(&mut self, dt: f32) {
-        if self.death_t >= 1.0 { return; }
-        self.death_t = (self.death_t + dt * 2.2).min(1.0);
-        let t = self.death_t;
-        let e = t * t;
-        if let Some(v) = &mut self.visual {
-            v.set_rotation(Vector3::new(-e * std::f32::consts::FRAC_PI_2, 0.0, 0.0));
-            v.set_position(Vector3::new(0.0, 0.15 * e, 0.0));
-        }
     }
 
     /// Line of sight against static world only (the player may be inside a car).
@@ -495,11 +610,13 @@ impl Npc {
         // Shooting decisions happen at the sense rate.
         if role == "guard" && self.brain == Brain::Combat && self.sees_player && self.awareness.state == AlertState::Hostile {
             self.fire_timer -= SENSE_INTERVAL;
-            if self.fire_timer <= 0.0 {
-                self.fire_timer = self.rng.range(0.45, 0.95);
+            if self.fire_timer <= 0.0 && !self.wounds.stumbling() {
+                let wp = world().wounds.clone();
+                self.fire_timer = self.rng.range(0.45, 0.95) * self.wounds.fire_delay_mult(&wp);
                 let d = me.distance_to(ppos);
                 let mut p_hit = (0.8 - d / 45.0 - speed * 0.045).clamp(0.08, 0.8);
                 if crouched { p_hit *= 0.85; }
+                p_hit *= self.wounds.accuracy_mult(&wp);
                 let hit = self.rng.chance(p_hit);
                 let aim = ppos + Vector3::new(0.0, if crouched { 0.9 } else { 1.3 }, 0.0);
                 let miss = if hit {
@@ -609,7 +726,8 @@ impl Npc {
                 self.route.remove(0);
                 continue;
             }
-            let speed = if self.running { self.run_speed } else { self.walk_speed };
+            let limp = self.wounds.speed_mult(&world().wounds, self.running);
+            let speed = if self.running { self.run_speed } else { self.walk_speed } * limp;
             want = flat.normalized() * speed;
             if last && flat.length() < 1.2 { want *= flat.length() / 1.2 + 0.2; }
             break;
@@ -634,34 +752,14 @@ impl Npc {
         self.base_mut().move_and_slide();
 
         let hs = Vector3::new(vel.x, 0.0, vel.z);
-        if hs.length() > 0.3 && self.brain != Brain::Combat {
+        if self.wounds.stumbling() {
+            // On one knee: no turning either.
+        } else if hs.length() > 0.3 && self.brain != Brain::Combat {
             let yaw = (-hs.x).atan2(-hs.z);
             self.turn_to(yaw, dt, 8.0);
         } else if self.dest.is_none() {
             if let Some(f) = self.goal_face {
                 if self.brain == Brain::Routine { self.turn_to(f, dt, 5.0); }
-            }
-        }
-    }
-
-    fn animate(&mut self, dt: f32) {
-        let v = self.base().get_velocity();
-        let speed = Vector3::new(v.x, 0.0, v.z).length();
-        self.phase += speed * dt * 3.2;
-        let amp = (speed / 4.0).min(0.9) * 0.9;
-        let s = self.phase.sin() * amp;
-        let combat = self.brain == Brain::Combat;
-        let talk = if self.speaking { (self.phase * 0.0 + self.rng.range(-1.0, 1.0)) * 0.0 } else { 0.0 };
-        let _ = talk;
-        for (i, limb) in self.limbs.iter_mut().enumerate() {
-            if let Some(l) = limb {
-                let a = match i {
-                    0 => s,
-                    1 => -s,
-                    2 => if combat { -1.3 } else { -s * 0.7 },
-                    _ => if combat { -1.4 } else { s * 0.7 },
-                };
-                l.set_rotation(Vector3::new(a, 0.0, 0.0));
             }
         }
     }

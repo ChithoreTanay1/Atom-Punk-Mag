@@ -81,6 +81,7 @@ impl GameSim {
                     let mut w = world();
                     w.tuning = tuning;
                     w.ai = c.ai.clone();
+                    w.wounds = c.wounds.clone();
                 }
                 self.content = Some(c);
                 let md = MarketDef::load(&dir.join("market.ron"));

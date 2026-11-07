@@ -5,6 +5,7 @@
 //! - `tuning`    every movement / vehicle / camera number, one data file
 //! - `content`   data-driven definitions (weapons, gadgets, governors, events)
 //! - `awareness` NPC detection model (stealth)
+//! - `injury`    locational damage: hit zones, limps, downed bodies
 //! - `nav`       waypoint graph + A* for NPC routing
 //! - `mission`   field mission state: clock, routine, intel, methods, alarm
 //! - `campaign`  strategic layer: governors, loyalty, rumors, king's stability
@@ -13,6 +14,7 @@
 pub mod awareness;
 pub mod campaign;
 pub mod content;
+pub mod injury;
 pub mod market;
 pub mod mission;
 pub mod nav;
