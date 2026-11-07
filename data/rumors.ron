@@ -1,0 +1,45 @@
+[
+    (
+        id: "rumor_lowborn",
+        // Curtius 9.2 preserves a hostile story that the ruler was low-born and
+        // took the throne by murder. HIST source, doubtful content. Rumor only.
+        text: "The king is a barber's son who murdered his way to the throne.",
+        tag: Hist,
+        loyalty_per_night: -1.5,
+        stability_per_night: -1.0,
+        spread_rate: 0.08,
+    ),
+    (
+        id: "rumor_treasury",
+        // The Nandas were proverbially rich (LORE.md). The granary angle is INVENTED.
+        text: "The treasury overflows while the granaries stand empty.",
+        tag: Invented,
+        loyalty_per_night: -1.0,
+        stability_per_night: -1.5,
+        spread_rate: 0.06,
+    ),
+    (
+        id: "rumor_purge",
+        text: "The king strangles governors on forged letters. Who is next?",
+        tag: Invented,
+        loyalty_per_night: -3.0,
+        stability_per_night: -0.5,
+        spread_rate: 0.12,
+    ),
+    (
+        id: "rumor_tea",
+        text: "The governor of Saptavarta drank the king's tea.",
+        tag: Invented,
+        loyalty_per_night: -2.0,
+        stability_per_night: -0.5,
+        spread_rate: 0.1,
+    ),
+    (
+        id: "rumor_curse",
+        text: "Something walks the governors' halls at night.",
+        tag: Invented,
+        loyalty_per_night: -1.0,
+        stability_per_night: -0.3,
+        spread_rate: 0.1,
+    ),
+]

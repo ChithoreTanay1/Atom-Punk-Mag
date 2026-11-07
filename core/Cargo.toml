@@ -1,0 +1,13 @@
+[package]
+name = "core"
+version = "0.1.0"
+edition = "2021"
+description = "Pure Rust simulation for the Magadha slice. No Godot types."
+
+[lib]
+name = "magadha_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+ron = "0.8"

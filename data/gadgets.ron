@@ -1,0 +1,48 @@
+// Gadgets ("future trinkets"). All INVENTED. Mechanics inspired by the
+// Arthashastra's covert toolkit (Bk 1 agents, Bk 4 removal of thorns) as DESIGN.
+[
+    (
+        id: "gdg_tape_bug",
+        name: "Murmur Cassette",
+        kind: TapeBug,
+        tag: Invented,
+        description: "Pocket tape recorder with a magnetic back. Stick it near where he talks; it hears what you can't.",
+        count: 2,
+        use_range: 3.0,
+        radius: 11.0,
+        duration: 0.0,
+    ),
+    (
+        id: "gdg_static_lure",
+        name: "Static Lure",
+        kind: StaticLure,
+        tag: Invented,
+        description: "Thrown transistor box. Lands, then hisses and crackles. Guards go and look.",
+        count: 3,
+        use_range: 14.0,
+        radius: 18.0,
+        duration: 9.0,
+    ),
+    (
+        id: "gdg_datura_ampoule",
+        name: "Datura Ampoule",
+        kind: Poison,
+        tag: Invented,
+        description: "A glass ampoule in a beige spring case. Tasteless in tea. Slow, and quiet.",
+        count: 1,
+        use_range: 2.2,
+        radius: 0.0,
+        duration: 0.0,
+    ),
+    (
+        id: "gdg_forged_dispatch",
+        name: "Forged Dispatch",
+        kind: Forgery,
+        tag: Invented,
+        description: "A treasonous letter in a rival governor's hand, sealed with his seal. Only works if you know whose seal to use.",
+        count: 1,
+        use_range: 2.2,
+        radius: 0.0,
+        duration: 0.0,
+    ),
+]

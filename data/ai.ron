@@ -1,0 +1,16 @@
+// Guard perception. See core/src/awareness.rs for meanings.
+(
+    view_distance: 32.0,
+    view_half_angle_deg: 55.0,
+    sense_radius: 2.2,
+    base_rate: 2.6,
+    far_rate: 0.12,
+    crouch_mult: 0.5,
+    fast_mult: 1.5,
+    peripheral_mult: 0.45,
+    decay_rate: 0.22,
+    suspicious_at: 0.3,
+    search_time: 14.0,
+    alarm_rate_mult: 2.2,
+    hearing_mult: 1.0,
+)

@@ -1,0 +1,26 @@
+// Weapons. Silhouettes from recent real-world service weapons, reskinned in
+// cassette-futurist casings (see instructions.md section 3). Names INVENTED.
+[
+    (
+        id: "wpn_carbine_vajra",
+        name: "Vajra Mk.VII Carbine",
+        tag: Invented,
+        description: "Beige-and-charcoal bullpup carbine. Rotary selector, amber ready lamp, a thumbnail CRT counting rounds. Loud. The tool of last resort.",
+        silhouette_ref: "Modern compact 5.56 bullpup service carbine",
+        damage: 34.0,
+        headshot_mult: 2.8,
+        range: 120.0,
+        falloff_start: 35.0,
+        falloff_min: 0.6,
+        rpm: 640.0,
+        mag_size: 24,
+        reserve: 72,
+        reload_time: 2.1,
+        spread_deg: 2.4,
+        ads_spread_deg: 0.35,
+        recoil_pitch_deg: 1.15,
+        recoil_yaw_deg: 0.4,
+        noise_radius: 48.0,
+        modes: [Semi, Auto],
+    ),
+]

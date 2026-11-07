@@ -1,0 +1,54 @@
+[
+    (
+        id: "ev_beas",
+        title: "Word from the Beas",
+        // Arrian Anabasis 5.25-29; Curtius 9.2-3; Diodorus 17.93-95; Plutarch Alex. 62.
+        text: "The Yavana army has refused to march past the Hyphasis. The king takes the credit.",
+        tag: Hist,
+        min_night: 1, chance: 1.0, once: true,
+        effects: [Stability(4.0), LoyaltyAll(3.0)],
+    ),
+    (
+        id: "ev_host_review",
+        title: "The royal host on parade",
+        // Greek sources stress the size of the army: "huge, roughly 200,000 foot".
+        text: "The king reviews his host, huge, roughly two hundred thousand foot. The governors remember who pays them.",
+        tag: Hist,
+        min_night: 2, chance: 0.25, once: true,
+        effects: [Stability(5.0), LoyaltyAll(2.0)],
+    ),
+    (
+        id: "ev_rakshasa_audit",
+        title: "Rakshasa's audit",
+        // Rakshasa is TRAD (Mudrarakshasa); this audit is INVENTED.
+        text: "Minister Rakshasa sends clerks to every province. Locks are changed, ledgers counted.",
+        tag: Invented,
+        min_night: 2, chance: 0.3, once: true,
+        effects: [ParanoiaAll(8.0), Heat(6.0)],
+    ),
+    (
+        id: "ev_shakatala_gold",
+        title: "Quiet gold",
+        // Shakatala is TRAD (Jain tradition); this gift is INVENTED.
+        text: "A servant of Minister Shakatala's household leaves a heavy purse with no note.",
+        tag: Invented,
+        min_night: 3, chance: 0.35, once: true,
+        effects: [Gold(25)],
+    ),
+    (
+        id: "ev_informers",
+        title: "Informers in the markets",
+        text: "Royal informers sweep the markets. One of ours does not come back.",
+        tag: Invented,
+        min_night: 2, chance: 0.6, heat_above: Some(60.0),
+        effects: [Agents(-1), Heat(-10.0)],
+    ),
+    (
+        id: "ev_granary_riot",
+        title: "Granary riots",
+        text: "Crowds at the granary doors in two provinces. The king sends elephants.",
+        tag: Invented,
+        min_night: 3, chance: 0.4, stability_below: Some(45.0),
+        effects: [Stability(-4.0), ParanoiaAll(5.0)],
+    ),
+]
