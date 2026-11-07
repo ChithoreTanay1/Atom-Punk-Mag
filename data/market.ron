@@ -1,0 +1,132 @@
+// The Pataliputra Exchange [INVENTED]. A pretend market in the style of an
+// early-1980s trading floor (prices quoted in eighths, ticker tape, telex
+// news). Every company, ticker and tie here is INVENTED.
+//
+// To hook a future character into the market, give the character an id and
+// add a tie on any company:  (entity: "char_<id>", on_death: -0.15)
+// Their death (event key "death:char_<id>") then moves that stock. Reactions
+// below match event keys exactly, or by prefix with a trailing "*".
+//
+// Event keys the game reports today:
+//   death:<governor id>    a governor is killed (any method)
+//   removed:<governor id>  a governor leaves office (campaign)
+//   method:<quiet_kill|loud_kill|poison|frame|failed>
+//   alarm                  a compound goes on alarm
+//   night                  a night passes in the war room
+(
+    exchange: "Pataliputra Exchange",
+    currency: "pana",
+    start_cash: 5000.0,
+    tick_seconds: 1.5,
+    night_ticks: 40,
+    sectors: [
+        (id: "steel", name: "Steel & Alloys", drift: 0.00005, volatility: 0.0022),
+        (id: "cement", name: "Cement & Building", drift: 0.00008, volatility: 0.0018),
+        (id: "tech", name: "Data, Electronics & Telecom", drift: 0.00015, volatility: 0.0035),
+        (id: "agri", name: "Grain, Tea & Fertiliser", drift: 0.00003, volatility: 0.0015),
+        (id: "energy", name: "Atomic Power", drift: 0.00004, volatility: 0.002),
+        (id: "motor", name: "Motors & Aerodynes", drift: 0.00006, volatility: 0.0028),
+        (id: "finance", name: "Banking", drift: 0.00002, volatility: 0.0012),
+        (id: "arms", name: "Arms & Security", drift: 0.00004, volatility: 0.0025),
+    ],
+    companies: [
+        (
+            id: "vjra", name: "Vajra Steel Works Ltd.", ticker: "VJRA", sector: "steel", price: 42.375, volatility: 0.006,
+            description: "Blast furnaces on the Sone. Rails, girders, the frames of every tower on the boulevard.",
+            ties: [(entity: "gov_vatsabhumi", on_death: -0.12)],
+        ),
+        (
+            id: "miac", name: "Magadha Iron & Alloy Corp.", ticker: "MIAC", sector: "steel", price: 18.5, volatility: 0.008,
+            description: "Specialty alloys and armour plate. Thin margins, loud shareholders.",
+            ties: [(entity: "gov_dakshavana", on_death: -0.08)],
+        ),
+        (
+            id: "pcem", name: "Pataliputra Cement Co.", ticker: "PCEM", sector: "cement", price: 27.75, volatility: 0.005,
+            description: "Holds the Saptavarta compound contracts. Its board dines with the governor.",
+            ties: [(entity: "gov_saptavarta", on_death: -0.14), (entity: "gov_saptavarta_2", on_death: -0.06)],
+        ),
+        (
+            id: "svpl", name: "Sone Valley Portland Ltd.", ticker: "SVPL", sector: "cement", price: 11.125, volatility: 0.007,
+            description: "The rival bidder for every state contract Pataliputra Cement wins.",
+            ties: [(entity: "gov_saptavarta", on_death: 0.07)],
+        ),
+        (
+            id: "kdmc", name: "Kosala Data Machines Corp.", ticker: "KDMC", sector: "tech", price: 96.25, volatility: 0.009,
+            description: "Mainframes in walnut cabinets for every ministry. Punched-card heritage, magnetic-tape future.",
+            ties: [],
+        ),
+        (
+            id: "rtdp", name: "Ratnadeep Electronics Inc.", ticker: "RTDP", sector: "tech", price: 34.625, volatility: 0.011,
+            description: "Cassette decks, CRT terminals, the amber screens in every guard post.",
+            ties: [],
+        ),
+        (
+            id: "aktc", name: "Akashvani Telecom Corp.", ticker: "AKTC", sector: "tech", price: 58.0, volatility: 0.007,
+            description: "Telex lines and trunk calls. Every dispatch to the capital runs on its copper.",
+            ties: [(entity: "gov_hiranyavaha", on_death: -0.05)],
+        ),
+        (
+            id: "ggrn", name: "Ganga Grain Holdings Ltd.", ticker: "GGRN", sector: "agri", price: 22.25, volatility: 0.004,
+            description: "Granaries from Champa to Kashi. Moves on rumours of empty stores.",
+            ties: [(entity: "gov_ujjayanta", on_death: -0.06)],
+        ),
+        (
+            id: "stsc", name: "Sugandha Tea & Spice Co.", ticker: "STSC", sector: "agri", price: 15.875, volatility: 0.005,
+            description: "Supplies the tea services of half the governorates.",
+            ties: [],
+        ),
+        (
+            id: "kfrt", name: "Krishi Fertiliser Corp.", ticker: "KFRT", sector: "agri", price: 9.375, volatility: 0.008,
+            description: "Nitrates for the fields, and for other things.",
+            ties: [],
+        ),
+        (
+            id: "sapc", name: "Surya Atomic Power Corp.", ticker: "SAPC", sector: "energy", price: 71.5, volatility: 0.005,
+            description: "The reactor domes on the skyline. Light for every window in the city.",
+            ties: [],
+        ),
+        (
+            id: "kmwl", name: "Kestrel Motor Works Ltd.", ticker: "KMWL", sector: "motor", price: 47.125, volatility: 0.008,
+            description: "Builders of the Kestrel 80 wedge coupe. Low, loud and late on every delivery.",
+            ties: [],
+        ),
+        (
+            id: "grda", name: "Garuda Aerodyne Inc.", ticker: "GRDA", sector: "motor", price: 63.0, volatility: 0.01,
+            description: "Dirigibles and survey craft. The ship circling the city is theirs.",
+            ties: [],
+        ),
+        (
+            id: "nrtb", name: "Nanda Royal Treasury Bank", ticker: "NRTB", sector: "finance", price: 112.0, volatility: 0.003,
+            description: "The king's own bank. As steady as the throne, no steadier.",
+            ties: [],
+        ),
+        (
+            id: "dpac", name: "Dandapani Arms Corp.", ticker: "DPAC", sector: "arms", price: 38.25, volatility: 0.007,
+            description: "Carbines, armour and guard contracts. Disorder is good for business.",
+            ties: [],
+        ),
+    ],
+    reactions: [
+        (key: "death:*", headline: "Governor killed: arms makers bid up, the bank sold", moves: [
+            (target: "dpac", pct: 0.06), (target: "nrtb", pct: -0.03), (target: "all", pct: -0.01),
+        ]),
+        (key: "method:loud_kill", headline: "Gunfire in a governor's compound: panic selling", moves: [
+            (target: "all", pct: -0.02), (target: "dpac", pct: 0.05), (target: "nrtb", pct: -0.02),
+        ]),
+        (key: "method:poison", headline: "Poisoning rumour hits tea merchants", moves: [
+            (target: "stsc", pct: -0.11), (target: "sector:agri", pct: -0.02),
+        ]),
+        (key: "method:frame", headline: "The king arrests his own governor: the bank wobbles", moves: [
+            (target: "nrtb", pct: -0.06), (target: "aktc", pct: 0.04),
+        ]),
+        (key: "method:failed", headline: "The governor survives: steady trading", moves: [
+            (target: "nrtb", pct: 0.01),
+        ]),
+        (key: "alarm", headline: "Alarm raised in Saptavarta: security stocks firm", moves: [
+            (target: "dpac", pct: 0.02), (target: "sector:cement", pct: -0.01),
+        ]),
+        (key: "removed:*", headline: "A governorate changes hands", moves: [
+            (target: "sector:finance", pct: -0.015),
+        ]),
+    ],
+)

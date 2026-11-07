@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use magadha_core::campaign::{Campaign, GovStatus};
 use magadha_core::content::{Content, GadgetKind, Method};
+use magadha_core::market::{eighths, Market, MarketDef};
 use magadha_core::mission::{Mission, MissionEvent, TargetStatus};
 use magadha_core::tuning::Tuning;
 
@@ -20,6 +21,8 @@ pub struct GameSim {
     campaign: Option<Campaign>,
     mission: Option<Mission>,
     mission_gov: Option<String>,
+    market_def: Option<MarketDef>,
+    market: Option<Market>,
     base: Base<Node>,
 }
 
@@ -80,8 +83,12 @@ impl GameSim {
                     w.ai = c.ai.clone();
                 }
                 self.content = Some(c);
+                let md = MarketDef::load(&dir.join("market.ron"));
                 self.data_dir = dir;
-                GString::new()
+                match md {
+                    Ok(d) => { self.market_def = Some(d); GString::new() }
+                    Err(e) => s(&e.0),
+                }
             }
             Err(e) => s(&e.0),
         }
@@ -191,6 +198,7 @@ impl GameSim {
         if let Some(c) = &self.content {
             self.campaign = Some(Campaign::new(c, seed as u64));
             self.mission = None;
+            self.market = self.market_def.as_ref().map(|d| Market::new(d, seed as u64));
         }
     }
 
@@ -202,6 +210,8 @@ impl GameSim {
     #[func]
     fn save_campaign(&self, path: GString) -> bool {
         let Some(c) = &self.campaign else { return false };
+        let mut c = c.clone();
+        c.market = self.market.clone();
         c.to_ron().ok().and_then(|t| std::fs::write(path.to_string(), t).ok()).is_some()
     }
 
@@ -209,7 +219,11 @@ impl GameSim {
     fn load_campaign(&mut self, path: GString) -> bool {
         let Ok(t) = std::fs::read_to_string(path.to_string()) else { return false };
         match Campaign::from_ron(&t) {
-            Ok(c) => { self.campaign = Some(c); true }
+            Ok(mut c) => {
+                self.market = c.market.take().or_else(|| self.market_def.as_ref().map(|d| Market::new(d, c.seed)));
+                self.campaign = Some(c);
+                true
+            }
             Err(e) => { godot_warn!("save load failed: {e}"); false }
         }
     }
@@ -272,7 +286,23 @@ impl GameSim {
     #[func]
     fn end_night(&mut self) -> PackedStringArray {
         let (Some(c), Some(cs)) = (&self.content, &mut self.campaign) else { return PackedStringArray::new() };
-        cs.end_night(c).iter().map(|x| s(x)).collect()
+        let mut lines: Vec<String> = cs.end_night(c);
+        if let (Some(d), Some(m)) = (&self.market_def, &mut self.market) {
+            m.open_session();
+            for _ in 0..d.night_ticks { m.step(d); }
+            for h in m.event(d, "night", 1.0) { lines.push(format!("Exchange: {h}")); }
+            // The night's biggest mover, for the war-room report.
+            if let Some((i, q)) = m.quotes.iter().enumerate().max_by(|a, b| {
+                let ca = ((a.1.price - a.1.open) / a.1.open.max(0.01)).abs();
+                let cb = ((b.1.price - b.1.open) / b.1.open.max(0.01)).abs();
+                ca.partial_cmp(&cb).unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                let ch = (q.price - q.open) / q.open.max(0.01) * 100.0;
+                let c = &d.companies[i];
+                lines.push(format!("Exchange: {} ({}) closes at {}, {:+.1}% on the session.", c.name, c.ticker, eighths(q.price), ch));
+            }
+        }
+        lines.iter().map(|x| s(x)).collect()
     }
 
     // ---- Mission -----------------------------------------------------------
@@ -427,6 +457,11 @@ impl GameSim {
     #[func]
     fn governor_killed(&mut self) {
         if let Some(m) = &mut self.mission { m.governor_killed(); }
+        if let Some(g) = self.mission_gov.clone() {
+            let key = format!("death:{g}");
+            let news = self.market_event_inner(&key, 1.0);
+            self.pending_news(news);
+        }
     }
 
     #[func]
@@ -491,8 +526,129 @@ impl GameSim {
     fn apply_mission_result(&mut self, method: GString) -> GString {
         let (Some(c), Some(cs), Some(gov)) = (&self.content, &mut self.campaign, &self.mission_gov) else { return GString::new() };
         let text = cs.apply_mission(c, gov, method_from(&method.to_string()));
+        let key = format!("removed:{gov}");
         self.mission = None;
+        if method.to_string() != "failed" {
+            let news = self.market_event_inner(&key, 1.0);
+            self.pending_news(news);
+        }
         s(&text)
+    }
+
+    // ---- Exchange ----------------------------------------------------------
+
+    fn ensure_market(&mut self) {
+        if self.market.is_none() {
+            if let Some(d) = &self.market_def {
+                self.market = Some(Market::new(d, 1980));
+            }
+        }
+    }
+
+    fn market_event_inner(&mut self, key: &str, scale: f32) -> Vec<String> {
+        self.ensure_market();
+        let mut out = match (&self.market_def, &mut self.market) {
+            (Some(d), Some(m)) => m.event(d, key, scale),
+            _ => vec![],
+        };
+        // Show people by name on the wire. Future characters only need an
+        // entry here (or in their own content table) to read nicely.
+        if let Some(c) = &self.content {
+            let mut govs: Vec<_> = c.governors.iter().collect();
+            govs.sort_by_key(|g| std::cmp::Reverse(g.id.len()));
+            for line in out.iter_mut() {
+                for g in &govs {
+                    if line.contains(&g.id) {
+                        *line = line.replace(&g.id, &format!("{}, {}", g.name, g.title));
+                    }
+                }
+            }
+            if let Some(m) = &mut self.market {
+                let n = m.news.len();
+                for (i, line) in out.iter().enumerate() {
+                    if let Some(x) = m.news.get_mut(n.saturating_sub(out.len()) + i) { x.text = line.clone(); }
+                }
+            }
+        }
+        out
+    }
+
+    fn pending_news(&mut self, news: Vec<String>) {
+        if news.is_empty() { return; }
+        let arr: PackedStringArray = news.iter().map(|x| s(x)).collect();
+        self.base_mut().call_deferred("emit_signal", &["market_news".to_variant(), arr.to_variant()]);
+    }
+
+    #[signal]
+    fn market_news(headlines: PackedStringArray);
+
+    /// Advance the exchange by real seconds. True if prices changed.
+    #[func]
+    fn market_tick(&mut self, dt: f32) -> bool {
+        self.ensure_market();
+        match (&self.market_def, &mut self.market) {
+            (Some(d), Some(m)) => m.advance(d, dt),
+            _ => false,
+        }
+    }
+
+    /// Report a game event (see data/market.ron for keys). Returns headlines
+    /// and also emits `market_news`.
+    #[func]
+    fn market_event(&mut self, key: GString, scale: f32) -> PackedStringArray {
+        let news = self.market_event_inner(&key.to_string(), scale);
+        self.pending_news(news.clone());
+        news.iter().map(|x| s(x)).collect()
+    }
+
+    /// Buy (qty > 0) or sell (qty < 0). Returns "" or an error.
+    #[func]
+    fn market_trade(&mut self, id: GString, qty: i64) -> GString {
+        self.ensure_market();
+        match &mut self.market {
+            Some(m) => match m.trade(&id.to_string(), qty) { Ok(()) => GString::new(), Err(e) => s(&e) },
+            None => s("The exchange is closed."),
+        }
+    }
+
+    #[func]
+    fn market_state(&mut self) -> VarDictionary {
+        self.ensure_market();
+        let (Some(d), Some(m)) = (&self.market_def, &self.market) else { return VarDictionary::new() };
+        let mut rows = VarArray::new();
+        for (i, c) in d.companies.iter().enumerate() {
+            let q = &m.quotes[i];
+            let held = *m.holdings.get(&c.id).unwrap_or(&0);
+            let hist: PackedFloat32Array = q.history.iter().copied().collect();
+            let sector = d.sectors.iter().find(|x| x.id == c.sector).map(|x| x.name.clone()).unwrap_or_default();
+            let row = vdict! {
+                "id" => c.id.as_str(),
+                "name" => c.name.as_str(),
+                "ticker" => c.ticker.as_str(),
+                "sector" => sector.as_str(),
+                "description" => c.description.as_str(),
+                "price" => q.price,
+                "price_text" => eighths(q.price).as_str(),
+                "open" => q.open,
+                "change" => (q.price - q.open) / q.open.max(0.01),
+                "history" => &hist,
+                "held" => held,
+                "avg_cost" => *m.cost.get(&c.id).unwrap_or(&0.0),
+            };
+            rows.push(&row.to_variant());
+        }
+        let mut news = PackedStringArray::new();
+        for n in m.news.iter().rev().take(8) { news.push(&s(&n.text)); }
+        vdict! {
+            "exchange" => d.exchange.as_str(),
+            "currency" => d.currency.as_str(),
+            "cash" => m.cash,
+            "portfolio" => m.portfolio_value(),
+            "start_cash" => d.start_cash,
+            "companies" => &rows,
+            "news" => &news,
+            "tick" => m.tick as i64,
+        }
     }
 
     // ---- Navigation --------------------------------------------------------

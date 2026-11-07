@@ -7,6 +7,7 @@ enum {
 	IVORY, WALNUT, BURGUNDY, BRASS, MARBLE, CARPET, LEATHER,
 	BEIGE, WARM_GREY, CRT, AMBER, TEAL, PETROL, TERRACOTTA,
 	FOLIAGE, GLASS, WATER, WINDOWS, BANNER, LAMP, SKIN, GUARD, ROBE, BLACK, CHROME, TYRE,
+	CAR_PAINT, CAR_ORANGE, CAR_GLASS, PLUSH, DASH_DARK,
 	COUNT
 }
 
@@ -86,7 +87,21 @@ static func mats() -> Array[Material]:
 	_mats[BLACK] = _kit("#141618", 0, 0.5)
 	_mats[CHROME] = _kit("#B9C0C2", 0, 0.18, 1.0, "#000000", 0.9)
 	_mats[TYRE] = _kit("#1E2021", 0, 0.9)
-	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE, ROAD, FOLIAGE, STEEL, CHARCOAL]:
+	# The Kestrel 80 wedge: metallic green paint, orange accents, copper-tinted
+	# canopy that stays visible from inside (no back-face culling).
+	_mats[CAR_PAINT] = _kit("#4E8A3A", 0, 0.22, 1.0, "#000000", 0.55, 0.6)
+	_mats[CAR_ORANGE] = _kit("#D9642A", 0, 0.3, 1.0, "#000000", 0.2, 0.6)
+	var cg := StandardMaterial3D.new()
+	cg.albedo_color = Color(0.42, 0.27, 0.14, 0.32)
+	cg.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	cg.cull_mode = BaseMaterial3D.CULL_DISABLED
+	cg.roughness = 0.04
+	cg.metallic = 0.35
+	_mats[CAR_GLASS] = cg
+	# 80s burgundy velour and moulded plastic for the cabin.
+	_mats[PLUSH] = _kit("#5E2A33", 8, 0.92, 2.6)
+	_mats[DASH_DARK] = _kit("#1A1213", 0, 0.6)
+	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE, ROAD, FOLIAGE, STEEL, CHARCOAL, CAR_PAINT, CAR_ORANGE]:
 		_ext_mats.append(_mats[i])
 		_mats[i].set_shader_parameter("exposed", 1.0)
 	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE]:

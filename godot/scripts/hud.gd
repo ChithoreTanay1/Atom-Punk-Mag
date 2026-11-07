@@ -34,10 +34,18 @@ var _alarm_lamp: ColorRect
 var _sub_t := 0.0
 var _damage := 0.0
 var _quality_btn: Button
+var market: MarketPanel
+var _tape: RichTextLabel
+var _tape_clip: Control
+var _tape_x := 0.0
+var _tape_tick := -1
+var _tape_flash := 0.0
+var _tape_bg: ColorRect
 
 func _ready() -> void:
 	layer = 10
 	add_to_group("quality_listener")
+	add_to_group("market_listener")
 	_post = ColorRect.new()
 	_post.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_post.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -82,7 +90,7 @@ func _ready() -> void:
 	tr.anchor_right = 1.0
 	tr.offset_left = -440
 	tr.offset_right = -16
-	tr.offset_top = 16
+	tr.offset_top = 40
 	_root.add_child(tr)
 	var tv := VBoxContainer.new()
 	tr.add_child(tv)
@@ -122,6 +130,10 @@ func _ready() -> void:
 	_drive.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_root.add_child(_drive)
 
+	_build_tape()
+	market = MarketPanel.new()
+	market.closed.connect(toggle_market)
+	add_child(market)
 	_build_notebook()
 	_build_pause()
 	_build_debrief()
@@ -301,7 +313,91 @@ func toggle_notebook() -> void:
 		_fill_notebook()
 
 func notebook_open() -> bool:
-	return _notebook.visible
+	return _notebook.visible or (market != null and market.visible)
+
+func toggle_market() -> void:
+	if _debrief.visible or get_tree().paused:
+		return
+	market.visible = not market.visible
+	if market.visible:
+		_notebook.visible = false
+		market.refresh(true)
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		if player and player.enabled:
+			player.set_active(false)
+			player.set_meta("market_froze", true)
+	else:
+		if player and player.has_meta("market_froze"):
+			player.remove_meta("market_froze")
+			player.set_active(true)
+		if level and level.has_method("recapture_mouse"):
+			level.recapture_mouse()
+
+# ------------------------------------------------------------- ticker tape
+
+func _build_tape() -> void:
+	_tape_bg = ColorRect.new()
+	_tape_bg.color = Color(0.03, 0.035, 0.03, 0.88)
+	_tape_bg.anchor_right = 1.0
+	_tape_bg.offset_bottom = 26
+	_tape_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_tape_bg)
+	var lab := Label.new()
+	lab.text = "PTX"
+	lab.position = Vector2(10, 3)
+	lab.add_theme_font_override("font", Game.mono)
+	lab.add_theme_font_size_override("font_size", 14)
+	lab.add_theme_color_override("font_color", Color(0.05, 0.05, 0.05))
+	var tagbg := ColorRect.new()
+	tagbg.color = AMBER
+	tagbg.size = Vector2(46, 26)
+	_tape_bg.add_child(tagbg)
+	_tape_bg.add_child(lab)
+	_tape_clip = Control.new()
+	_tape_clip.clip_contents = true
+	_tape_clip.anchor_right = 1.0
+	_tape_clip.offset_left = 54
+	_tape_clip.offset_bottom = 26
+	_tape_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tape_bg.add_child(_tape_clip)
+	_tape = RichTextLabel.new()
+	_tape.bbcode_enabled = true
+	_tape.fit_content = true
+	_tape.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_tape.scroll_active = false
+	_tape.add_theme_font_override("normal_font", Game.mono)
+	_tape.add_theme_font_size_override("normal_font_size", 15)
+	_tape.position = Vector2(0, 3)
+	_tape.size = Vector2(6000, 22)
+	_tape.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tape_clip.add_child(_tape)
+
+func _update_tape(dt: float) -> void:
+	var st: Dictionary = Game.sim.market_state() if Engine.get_process_frames() % 20 == 0 or _tape_tick < 0 else {}
+	if not st.is_empty() and int(st.tick) != _tape_tick:
+		_tape_tick = int(st.tick)
+		var t := ""
+		for c in st.companies:
+			var ch: float = c.change * 100.0
+			var col := "#7FCF8A" if ch >= 0 else "#C8664A"
+			t += "[color=#D9962B]%s[/color] [color=#CFC5AE]%s[/color] [color=%s]%s%.2f%%[/color]      " % [c.ticker, c.price_text, col, "+" if ch >= 0 else "", ch]
+		for h in st.news.slice(0, 2):
+			t += "[color=#E8C070]*** %s ***[/color]      " % str(h).to_upper()
+		_tape.text = t + t
+	_tape_x -= dt * 70.0
+	var w := _tape.get_content_width() * 0.5
+	if w > 10.0 and _tape_x < -w:
+		_tape_x += w
+	_tape.position.x = _tape_x
+	_tape_flash = maxf(_tape_flash - dt, 0.0)
+	_tape_bg.color = Color(0.03, 0.035, 0.03, 0.88).lerp(Color(0.35, 0.22, 0.05, 0.92), clampf(_tape_flash, 0.0, 1.0) * (0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.02)))
+
+func on_market_news(headlines: PackedStringArray) -> void:
+	for h in headlines:
+		message("EXCHANGE: " + h)
+	_tape_tick = -2
+	_tape_flash = 2.5
+	Game.play_2d("telex", -18, 1.2)
 
 func _fill_notebook() -> void:
 	var st: Dictionary = Game.mstate()
@@ -348,6 +444,7 @@ func subtitle(speaker: String, text: String, via_tape: bool) -> void:
 	_sub_t = 5.0
 
 func _process(dt: float) -> void:
+	_update_tape(dt)
 	_sub_t -= dt
 	if _sub_t <= 0.0:
 		_subtitle.text = ""

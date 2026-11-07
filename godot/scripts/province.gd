@@ -922,6 +922,7 @@ func _on_event(e: Dictionary) -> void:
 			Game.play_2d("beep", -6, 1.2)
 		"alarm":
 			alarm_player.play()
+			Game.sim.market_event("alarm", 1.0)
 			for g in guards:
 				g.alert(player.global_position, false)
 			if gov.alive:
@@ -1029,6 +1030,7 @@ func _on_finished(method: String) -> void:
 		return
 	_finished = true
 	alarm_player.stop()
+	Game.sim.market_event("method:" + method, 1.0)
 	var titles := {"quiet_kill": "REMOVED QUIETLY", "loud_kill": "REMOVED UNDER FIRE", "poison": "REMOVED BY POISON",
 		"frame": "REMOVED BY THE KING'S OWN HAND", "failed": "THE GOVERNOR SURVIVES THE NIGHT"}
 	var report := ""

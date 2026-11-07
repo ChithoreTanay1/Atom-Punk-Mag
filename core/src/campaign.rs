@@ -92,6 +92,9 @@ pub struct Campaign {
     pub fired_events: Vec<String>,
     pub outcome: Option<Outcome>,
     rng: Rng,
+    /// The exchange travels with the save.
+    #[serde(default)]
+    pub market: Option<crate::market::Market>,
 }
 
 impl Campaign {
@@ -117,6 +120,7 @@ impl Campaign {
             fired_events: vec![],
             outcome: None,
             rng: Rng::new(seed),
+            market: None,
         };
         s.log(format!("Night 1. The king's stability stands at {:.0}.", s.stability));
         s

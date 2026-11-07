@@ -44,6 +44,7 @@ func _ready() -> void:
 	data_error = sim.load_data(_data_dir())
 	if data_error != "":
 		push_error("Data load failed: " + data_error)
+	sim.market_news.connect(func(h: PackedStringArray): get_tree().call_group("market_listener", "on_market_news", h))
 	var bank := SfxBank.new()
 	for n in bank.names():
 		sfx[n] = bank.make(n)
@@ -109,6 +110,8 @@ func _setup_input() -> void:
 	_key("gadget_next", [KEY_Q])
 	_key("takedown", [KEY_F])
 	_key("notebook", [KEY_TAB])
+	_key("market", [KEY_M])
+	_key("camera_view", [KEY_V])
 	_key("pause", [KEY_ESCAPE])
 	_key("tuning", [KEY_F1])
 	_key("frametime", [KEY_F3])
@@ -299,6 +302,10 @@ func _unhandled_input(e: InputEvent) -> void:
 		save_settings()
 
 func _process(_dt: float) -> void:
+	# The exchange trades while you play (levels and the war room).
+	var cs := get_tree().current_scene
+	if cs and not get_tree().paused and (cs is LevelBase or cs.name == "WarRoom"):
+		sim.market_tick(_dt)
 	if debug.has("shot") and Engine.get_process_frames() == int(debug.get("frames", "120")) - 3:
 		get_tree().call_group("mouse_owner", "debug_relook")
 	if debug.has("shot") and Engine.get_process_frames() == int(debug.get("frames", "120")):

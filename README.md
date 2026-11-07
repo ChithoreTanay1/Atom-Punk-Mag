@@ -54,7 +54,7 @@ ASSETS.md         license and budget log for every asset
 
 ## Dependencies added
 
-- `core`: `serde` (derive) and `ron` 0.8, for loading the RON content in `/data`. Nothing else outside `godot` in `bridge`.
+- `core`: `serde` (derive) and `ron` 0.8, for loading the RON content in `/data`. (No new dependencies for the exchange, car or sight.) Nothing else outside `godot` in `bridge`.
 
 ## Running
 
@@ -74,14 +74,26 @@ Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png 
 | Use gadget / next gadget | G or MMB / Q |
 | Takedown (from behind, unseen) | F |
 | Notebook (dossier, intel, objectives) | Tab |
+| Exchange terminal (buy / sell, telex wire) | M |
+| Driving: cockpit / chase camera | V |
 | Reset car upright | T |
 | Pause / tuning panel / frame-time overlay / fullscreen | Esc / F1 / F3 / F11 |
+
+## The Pataliputra Exchange (pretend stock market)
+
+A ticker tape runs along the top of the screen while you play, and M opens the terminal (the war room has an Exchange button too). It holds 15 invented listings across steel, cement, tech, agriculture, power, motors, banking and arms. You start with 5,000 pana and trade in lots of 1, 10 or 100.
+
+- **State and logic** live in `core/src/market.rs` and travel with the campaign save. **Content** lives in `data/market.ron`. The bridge exposes `market_tick`, `market_event`, `market_trade` and `market_state` on GameSim, plus the `market_news` signal.
+- **Price model:** each company has a fundamental value. News moves the value at once, and part of the move gaps the price immediately. The price then chases the value with momentum and noise, and sectors move together.
+- **Events** are plain string keys: `death:<id>`, `removed:<id>`, `method:<kill method>`, `alarm`, `night`. Reactions in data match a key exactly, or by prefix with a trailing `*`.
+- **Characters later:** give a character an id and add `ties: [(entity: "char_<id>", on_death: -0.15)]` to any company. Then report `Game.sim.market_event("death:char_<id>", 1.0)` when they die. No code change is needed. Names are resolved for the wire in `GameSim::market_event_inner` (only governors today).
+- Debug: `--market=1` buys 40 PCEM, reports the Saptavarta governor's death and opens the terminal.
 
 ## Settings (main menu and pause menu)
 
 - **Retro filter:** off / dither / PSX (colour reduction, ordered dither and 450-line pixelation). The HUD stays sharp.
 - **Weather:** rain / snow / clear. Rain builds up wet, glossy streets with puddle ripples and reflections. Snow lays a growing white layer on exposed surfaces. Wetness and snow persist and fade when the weather changes.
-- Debug flags for captures: `--weather=rain|snow|clear`, `--retro=0..2`, `--fire=1` (hold the trigger), `--newcamp=1` (war room without a save).
+- Debug flags for captures: `--weather=rain|snow|clear`, `--retro=0..2`, `--fire=1` (hold the trigger), `--newcamp=1` (war room without a save), `--aim=1` (hold ADS), `--drive=move_forward+move_left` (enter the car and hold those actions, printing speed, gear and yaw).
 
 ## Performance (measured)
 

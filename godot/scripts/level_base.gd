@@ -17,6 +17,8 @@ var weather: Weather
 var base_fog_color := Color("#848D90")
 var base_fog_density := 0.0075
 var driving := false
+## Driving view: true = first-person cockpit, false = chase camera (V).
+var cockpit_view := true
 
 func _ready() -> void:
 	add_to_group("mouse_owner")
@@ -33,6 +35,16 @@ func _ready() -> void:
 		player.set_look(deg_to_rad(float(Game.debug.get("yaw", "0"))), deg_to_rad(float(Game.debug.get("pitch", "0"))))
 	if Game.debug.has("draw"):
 		rig.set_drawn(true)
+	if Game.debug.has("market"):
+		Game.sim.market_trade("pcem", 40)
+		Game.sim.market_event("death:gov_saptavarta", 1.0)
+		hud.toggle_market.call_deferred()
+	if Game.debug.has("drive") and car:
+		car.global_position = player.global_position + Vector3(0, 1.0, 0)
+		car.rotation.y = player.get_yaw()
+		enter_car(car)
+		for a in str(Game.debug.drive).split("+"):
+			Input.action_press(a)
 	on_quality_changed()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -149,6 +161,8 @@ func enter_car(c: ArcadeCar) -> void:
 		rig.set_drawn(false)
 	player.set_active(false)
 	c.set_driver(true)
+	if cockpit_view and c.has_node("Cockpit"):
+		c.get_node("Cockpit").activate(true)
 	Game.play_3d("door", c.global_position, -4)
 
 func exit_car() -> void:
@@ -169,6 +183,8 @@ func exit_car() -> void:
 		if space.intersect_shape(q, 1).is_empty():
 			chosen = s
 			break
+	if car.has_node("Cockpit"):
+		car.get_node("Cockpit").activate(false)
 	car.set_driver(false)
 	driving = false
 	player.global_position = chosen
@@ -193,9 +209,19 @@ func _unhandled_input(e: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif e.is_action_pressed("notebook"):
 		hud.toggle_notebook()
+	elif e.is_action_pressed("market"):
+		hud.toggle_market()
+		get_viewport().set_input_as_handled()
 	elif e.is_action_pressed("interact") and driving:
 		exit_car()
 		get_viewport().set_input_as_handled()
+	elif e.is_action_pressed("camera_view") and driving and car.has_node("Cockpit"):
+		cockpit_view = not cockpit_view
+		var ck: CarCockpit = car.get_node("Cockpit")
+		ck.activate(cockpit_view)
+		if not cockpit_view:
+			car.set_driver(true)
+		hud.message("Cockpit view" if cockpit_view else "Chase view")
 	elif e.is_action_pressed("reset_car") and driving:
 		car.reset_upright()
 	elif e is InputEventMouseButton and e.pressed and not get_tree().paused and not Game.tuning_open():
@@ -207,6 +233,8 @@ func _physics_process(_dt: float) -> void:
 		player.global_position = car.global_position + Vector3(0, 0.2, 0)
 
 func _process(_dt: float) -> void:
+	if Game.debug.has("drive") and car and Engine.get_process_frames() % 30 == 0:
+		print("drive t=%.2f f=%d pos=%s speed=%.2f rpm=%d gear=%d yaw=%.2f" % [Engine.get_physics_frames() / 120.0, Engine.get_process_frames(), str(car.global_position.snapped(Vector3.ONE * 0.1)), car.get_speed(), int(car.get_rpm()), car.get_gear(), car.rotation.y])
 	if weather:
 		_weather_env()
 

@@ -8,10 +8,12 @@
 //! - `nav`       waypoint graph + A* for NPC routing
 //! - `mission`   field mission state: clock, routine, intel, methods, alarm
 //! - `campaign`  strategic layer: governors, loyalty, rumors, king's stability
+//! - `market`    the pretend stock exchange; reacts to deaths and events
 
 pub mod awareness;
 pub mod campaign;
 pub mod content;
+pub mod market;
 pub mod mission;
 pub mod nav;
 pub mod rng;

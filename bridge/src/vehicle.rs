@@ -263,6 +263,22 @@ impl ArcadeCar {
     }
 
     /// Exit point beside the driver door, in world space.
+    /// Current front-wheel steer angle (radians, + = left).
+    #[func]
+    fn get_steer(&self) -> f32 {
+        self.steer
+    }
+
+    #[func]
+    fn get_throttle(&self) -> f32 {
+        self.throttle
+    }
+
+    #[func]
+    fn get_brake(&self) -> f32 {
+        self.brake
+    }
+
     #[func]
     fn get_exit_point(&self) -> Vector3 {
         let xf = self.base().get_global_transform();
@@ -412,13 +428,13 @@ impl ArcadeCar {
                 f_long -= vlong.signum() * (vt.rolling_resistance + 120.0).min(stop);
             }
 
-            // Friction circle: longitudinal gets priority under braking.
-            let total = (f_lat * f_lat + f_long * f_long).sqrt();
-            if total > max_f && total > 0.0 {
-                let s = max_f / total;
-                f_lat *= s;
-                f_long *= s;
-            }
+            // Friction circle. Longitudinal force (drive or brake) is served
+            // first; lateral grip gets what is left. Scaling both together let
+            // tiny lateral jitter (huge f_lat_wanted at 120 Hz) eat the whole
+            // budget and the car barely accelerated.
+            f_long = f_long.clamp(-max_f, max_f);
+            let lat_budget = (max_f * max_f - (f_long * 0.75) * (f_long * 0.75)).max(0.0).sqrt();
+            f_lat = f_lat.clamp(-lat_budget, lat_budget);
             let lat_slip = ((f_lat_wanted.abs() - lat_cap).max(0.0) / (wheel_mass * 10.0)).min(1.0);
             slip_total += lat_slip + if self.handbrake && !front && speed > 3.0 { 0.4 } else { 0.0 };
             load_total += load;

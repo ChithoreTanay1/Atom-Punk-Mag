@@ -170,6 +170,58 @@ impl KitBuilder {
         }
     }
 
+    /// Loft: a convex side profile in the Z/Y plane, extruded across X with a
+    /// half-width per vertex (`profile[i] = (z, y, half_width)`), so a body can
+    /// narrow toward the roof (tumblehome) or the nose. Flat-shaded; winding
+    /// is chosen per triangle from the shape's centroid, so any vertex order
+    /// works. Used for the wedge car body and its canopy. `open_edge` = i skips
+    /// the band between vertex i and i+1 (-1 keeps the loft closed).
+    #[func]
+    fn add_loft(&mut self, slot: i64, xf: Transform3D, profile: PackedVector3Array, open_edge: i64) {
+        let pts: Vec<Vector3> = profile.as_slice().to_vec();
+        let n = pts.len();
+        if n < 3 { return; }
+        let ao = self.strength();
+        let (mut ymin, mut ymax) = (f32::MAX, f32::MIN);
+        let mut centre = Vector3::ZERO;
+        for q in &pts {
+            ymin = ymin.min(q.y);
+            ymax = ymax.max(q.y);
+            centre += Vector3::new(0.0, q.y, q.x);
+        }
+        centre /= n as f32;
+        let b = xf.basis;
+        let o = xf.origin;
+        let shade = |y: f32| 1.0 - ao * (1.0 - ((y - ymin) / (ymax - ymin).clamp(0.5, 3.0)).clamp(0.0, 1.0));
+        let s = self.surf(slot);
+        let mut emit = |a: Vector3, bb: Vector3, c: Vector3| {
+            let (mut p1, mut p2) = (bb, c);
+            let mut nn = (p2 - a).cross(p1 - a);
+            if nn.length_squared() < 1e-12 { return; }
+            let out = (a + bb + c) / 3.0 - centre;
+            if nn.dot(out) < 0.0 {
+                std::mem::swap(&mut p1, &mut p2);
+                nn = -nn;
+            }
+            let nw = (b * nn.normalized()).normalized();
+            s.tri([o + b * a, o + b * p1, o + b * p2], nw, [shade(a.y), shade(p1.y), shade(p2.y)]);
+        };
+        let side = |i: usize, sx: f32| Vector3::new(sx * pts[i].z, pts[i].y, pts[i].x);
+        for sx in [1.0f32, -1.0] {
+            for i in 1..n - 1 {
+                emit(side(0, sx), side(i, sx), side(i + 1, sx));
+            }
+        }
+        for i in 0..n {
+            // `open_edge` leaves one band out (e.g. the underside of a canopy).
+            if i as i64 == open_edge { continue; }
+            let j = (i + 1) % n;
+            let (a, bb, c, d) = (side(i, 1.0), side(j, 1.0), side(j, -1.0), side(i, -1.0));
+            emit(a, bb, c);
+            emit(a, c, d);
+        }
+    }
+
     /// Register a box collider (same convention as `add_box`).
     #[func]
     fn add_collider(&mut self, xf: Transform3D, size: Vector3) {

@@ -429,23 +429,27 @@ static func make_npc(kind: String, pos: Vector3, tint := 0) -> Npc:
 # ------------------------------------------------------------- vehicle
 
 ## 1980s boxy executive sedan, cassette-futurist trim. ~2k tris.
-static func make_car(body_slot := P.CONCRETE_DARK) -> ArcadeCar:
+## The drivable car: the Kestrel 80, a mid-engined wedge (INVENTED make;
+## the shape is inspired by the 1968 Bertone Carabo concept). Body in car
+## space: front is -Z, ground at y = -0.23, wheels at x +-0.8, z +-1.38.
+static func make_car(_body_slot := P.CAR_PAINT) -> ArcadeCar:
 	var car := ArcadeCar.new()
 	car.name = "Car"
 	var col := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(1.86, 0.62, 4.4)
+	bs.size = Vector3(1.74, 0.5, 4.3)
 	col.shape = bs
-	col.position = Vector3(0, 0.55, 0)
+	col.position = Vector3(0, 0.38, 0)
 	car.add_child(col)
 	var col2 := CollisionShape3D.new()
 	var bs2 := BoxShape3D.new()
-	bs2.size = Vector3(1.6, 0.5, 2.1)
+	bs2.size = Vector3(1.4, 0.36, 1.7)
 	col2.shape = bs2
-	col2.position = Vector3(0, 1.1, 0.25)
+	col2.position = Vector3(0, 0.8, 0.15)
 	car.add_child(col2)
 	var mi := MeshInstance3D.new()
-	mi.mesh = car_body_mesh(body_slot)
+	mi.name = "Body"
+	mi.mesh = wedge_body_mesh()
 	car.add_child(mi)
 	var wheel_mesh := car_wheel_mesh()
 	for n in ["WheelFL", "WheelFR", "WheelRL", "WheelRR"]:
@@ -458,7 +462,87 @@ static func make_car(body_slot := P.CONCRETE_DARK) -> ArcadeCar:
 		wm.mesh = wheel_mesh
 		w.add_child(wm)
 		car.add_child(w)
+	var cockpit := CarCockpit.new()
+	cockpit.name = "Cockpit"
+	car.add_child(cockpit)
 	return car
+
+## Loft helper: profile points are (z, y, half_width).
+func loft(slot: int, pts: Array, t := Transform3D(), open_edge := -1) -> void:
+	var a := PackedVector3Array()
+	for p in pts:
+		a.append(p)
+	kit.add_loft(slot, t, a, open_edge)
+
+static func wedge_body_mesh() -> Mesh:
+	return cached("wedge", func():
+		var b := Builder.new(0.2)
+		# Orange knife-edge nose.
+		b.loft(P.CAR_ORANGE, [Vector3(-2.22, 0.24, 0.76), Vector3(-1.9, 0.312, 0.8), Vector3(-1.9, 0.169, 0.8), Vector3(-2.12, 0.16, 0.78)])
+		# Main wedge: one straight line from the nose to the tail, split so the
+		# cabin is open: bonnet, two door pods, rear quarter.
+		b.loft(P.CAR_PAINT, [Vector3(-1.9, 0.312, 0.8), Vector3(-0.8, 0.56, 0.86), Vector3(-0.8, 0.221, 0.86), Vector3(-1.9, 0.169, 0.8)])
+		for sx in [-1.0, 1.0]:
+			b.loft(P.CAR_PAINT, [Vector3(-0.8, 0.56, 0.12), Vector3(0.55, 0.625, 0.12), Vector3(0.55, 0.285, 0.12), Vector3(-0.8, 0.221, 0.12)],
+				Transform3D(Basis(), Vector3(sx * 0.74, 0, 0)))
+			# Sill under the door.
+			b.box(P.CAR_PAINT, Vector3(sx * 0.74, 0.1, -0.12), Vector3(0.24, 0.26, 1.34), false)
+		b.loft(P.CAR_PAINT, [Vector3(0.55, 0.625, 0.85), Vector3(2.1, 0.7, 0.84), Vector3(2.14, 0.36, 0.86), Vector3(0.55, 0.285, 0.85)])
+		# Valances: chin under the nose, diffuser behind the rear wheels.
+		b.loft(P.CAR_ORANGE, [Vector3(-2.12, 0.17, 0.78), Vector3(-1.76, 0.2, 0.8), Vector3(-1.76, 0.0, 0.76), Vector3(-2.02, 0.03, 0.72)])
+		b.box(P.BLACK, Vector3(0, 0.07, -2.0), Vector3(1.2, 0.03, 0.12), false)
+		b.loft(P.BLACK, [Vector3(1.76, 0.36, 0.84), Vector3(2.14, 0.37, 0.86), Vector3(2.08, 0.03, 0.8), Vector3(1.76, 0.03, 0.8)])
+		for sx in [-0.3, -0.1, 0.1, 0.3]:
+			b.box(P.CHARCOAL, Vector3(sx, 0.12, 2.1), Vector3(0.025, 0.16, 0.08), false)
+		# Floor pan and dark underside.
+		b.box(P.BLACK, Vector3(0, -0.03, 0), Vector3(1.24, 0.1, 4.0), false)
+		# Canopy: copper-tinted glass running almost flush with the bonnet line.
+		b.loft(P.CAR_GLASS, [Vector3(-0.8, 0.555, 0.84), Vector3(0.05, 0.97, 0.66), Vector3(0.55, 0.99, 0.64), Vector3(0.55, 0.62, 0.85)], Transform3D(), 3)
+		# Roof panel and canopy frame.
+		var roof_ang := atan2(0.02, 0.5)
+		b.box_xf(P.CAR_PAINT, Transform3D(Basis(Vector3.RIGHT, -roof_ang), Vector3(0, 0.99, 0.3)), Vector3(1.2, 0.025, 0.5))
+		for sx in [-1.0, 1.0]:
+			var p0 := Vector3(0.84 * sx, 0.56, -0.8)
+			var p1 := Vector3(0.66 * sx, 0.975, 0.05)
+			b.box_xf(P.BLACK, Transform3D(Basis.looking_at(p1 - p0), (p0 + p1) * 0.5), Vector3(0.035, 0.035, p0.distance_to(p1)))
+			var q0 := Vector3(0.85 * sx, 0.62, 0.55)
+			var q1 := Vector3(0.64 * sx, 0.99, 0.55)
+			b.box_xf(P.CAR_PAINT, Transform3D(Basis.looking_at(q1 - q0), (q0 + q1) * 0.5), Vector3(0.06, 0.06, q0.distance_to(q1)))
+		# Engine cover with black louvres.
+		b.loft(P.CAR_PAINT, [Vector3(0.55, 0.62, 0.85), Vector3(0.55, 0.99, 0.62), Vector3(1.0, 0.92, 0.66),
+			Vector3(2.1, 0.72, 0.82), Vector3(2.1, 0.66, 0.84)])
+		var slope := 0.2 / 1.1
+		for i in 7:
+			var z := 1.05 + i * 0.15
+			var y := 0.92 - slope * (z - 1.0) + 0.012
+			b.box_xf(P.BLACK, Transform3D(Basis(Vector3.RIGHT, atan(slope)), Vector3(0, y, z)), Vector3(1.0, 0.012, 0.07))
+		# Bonnet louvres (the twin vents ahead of the canopy).
+		var hs := (0.56 - 0.312) / 1.1
+		for sx in [-0.42, 0.42]:
+			for i in 4:
+				var z := -1.55 + i * 0.12
+				var y := 0.312 + hs * (z + 1.9) + 0.008
+				b.box_xf(P.BLACK, Transform3D(Basis(Vector3.RIGHT, -atan(hs)), Vector3(sx, y, z)), Vector3(0.42, 0.01, 0.05))
+		# Lamp slot across the nose, orange tail panel with square lamps.
+		b.box(P.BLACK, Vector3(0, 0.23, -2.14), Vector3(1.3, 0.035, 0.06), false)
+		for sx in [-0.55, 0.55]:
+			b.box(P.LAMP, Vector3(sx, 0.232, -2.165), Vector3(0.3, 0.025, 0.02), false)
+			b.box(P.AMBER, Vector3(sx * 1.38, 0.2, -2.1), Vector3(0.1, 0.03, 0.04), false)
+		b.box(P.BLACK, Vector3(0, 0.53, 2.15), Vector3(1.64, 0.28, 0.04), false)
+		for i in 9:
+			b.box(P.CHARCOAL, Vector3(0, 0.42 + i * 0.026, 2.172), Vector3(0.9, 0.01, 0.01), false)
+		for sx in [-1.0, 1.0]:
+			for k in 2:
+				b.box(P.BURGUNDY, Vector3(sx * (0.56 + k * 0.14), 0.55, 2.175), Vector3(0.11, 0.11, 0.02), false)
+				b.box(P.LAMP if k == 0 else P.AMBER, Vector3(sx * (0.56 + k * 0.14), 0.55, 2.188), Vector3(0.07, 0.07, 0.01), false)
+		b.box(P.CAR_ORANGE, Vector3(0, 0.33, 2.15), Vector3(1.7, 0.06, 0.05), false)
+		# Side intake and orange pinstripe.
+		for sx in [-1.0, 1.0]:
+			b.box(P.BLACK, Vector3(sx * 0.86, 0.5, 0.95), Vector3(0.02, 0.1, 0.5), false)
+			b.box_xf(P.CAR_ORANGE, Transform3D(Basis.looking_at(Vector3(0, 0.39, 4.0)), Vector3(sx * 0.845, 0.38, 0.1)), Vector3(0.012, 0.025, 4.0))
+			# Mirror.
+			b.box(P.BLACK, Vector3(sx * 0.9, 0.66, -0.55), Vector3(0.12, 0.06, 0.03), false)
+		return b.mesh())
 
 static func car_wheel_mesh() -> Mesh:
 	return cached("wheel", func():

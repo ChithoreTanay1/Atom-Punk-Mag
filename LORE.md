@@ -55,6 +55,8 @@ All of the following is ours; none of it is history.
 - **Mission:** the Saptavarta compound, the governor's evening routine, every spoken line, the intel items, and the telex-to-the-capital frame path.
 - **Rumors, agent operations and night events** in `data/rumors.ron`, `ops.ron` and `events.ron`. Their mechanics take inspiration from the *Arthashastra* (see below), but the texts are ours.
 - **Frame story texts:** "archive model 326-B" and its menu lines.
+- **The Pataliputra Exchange** (`data/market.ron`): a pretend stock market in the style of an early-1980s trading floor (prices in eighths, ticker tape, telex wire). Currency "pana" (a real ancient coin name, used loosely). All 15 listed companies, their tickers and descriptions are invented: Vajra Steel Works Ltd. (VJRA), Magadha Iron & Alloy Corp. (MIAC), Pataliputra Cement Co. (PCEM), Sone Valley Portland Ltd. (SVPL), Kosala Data Machines Corp. (KDMC), Ratnadeep Electronics Inc. (RTDP), Akashvani Telecom Corp. (AKTC), Ganga Grain Holdings Ltd. (GGRN), Sugandha Tea & Spice Co. (STSC), Krishi Fertiliser Corp. (KFRT), Surya Atomic Power Corp. (SAPC), Kestrel Motor Works Ltd. (KMWL), Garuda Aerodyne Inc. (GRDA), Nanda Royal Treasury Bank (NRTB), Dandapani Arms Corp. (DPAC). Company ties to governors (whose death moves which stock) are ours.
+- **Kestrel 80:** the wedge coupe you drive, built by Kestrel Motor Works. Invented make; the shape nods to the 1968 Bertone Carabo concept car.
 
 ## Design source: espionage (the *Arthashastra*)
 

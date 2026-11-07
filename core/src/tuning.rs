@@ -89,14 +89,14 @@ tunable_struct!(CameraTuning {
 });
 
 tunable_struct!(VehicleTuning {
-    mass: 1250.0, 400.0, 4000.0, "Body mass (kg)";
+    mass: 1100.0, 400.0, 4000.0, "Body mass (kg)";
     com_height: -0.2, -1.0, 0.5, "Centre of mass offset (m, below origin is stable)";
     susp_rest: 0.52, 0.2, 1.2, "Suspension ray length at rest (m)";
     susp_spring: 32000.0, 5000.0, 90000.0, "Spring rate per wheel (N/m)";
     susp_damp: 3400.0, 200.0, 12000.0, "Damper per wheel (N per m/s)";
     wheel_radius: 0.36, 0.2, 0.7, "Wheel radius (m)";
-    engine_force: 10500.0, 1000.0, 30000.0, "Peak drive force (N)";
-    max_speed: 44.0, 10.0, 90.0, "Top speed (m/s)";
+    engine_force: 12500.0, 1000.0, 30000.0, "Peak drive force (N)";
+    max_speed: 52.0, 10.0, 90.0, "Top speed (m/s)";
     reverse_force: 5200.0, 500.0, 15000.0, "Reverse drive force (N)";
     brake_force: 16000.0, 2000.0, 40000.0, "Brake force (N)";
     rear_drive_bias: 0.72, 0.0, 1.0, "Share of drive on rear axle";

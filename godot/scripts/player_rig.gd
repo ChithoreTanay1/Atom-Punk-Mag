@@ -150,6 +150,99 @@ static func glow_mat(col: Color, additive := true) -> StandardMaterial3D:
 
 # ------------------------------------------------------------- view model
 
+## Reflex sight: an open tube you look *through*. Hollow housing (walls,
+## top strap, front and rear hoods), a faintly tinted lens and an amber
+## reticle on the lens. SIGHT_CENTER is where the reticle sits in gun
+## space; the ADS pose puts it exactly on the camera's forward axis.
+const SIGHT_CENTER := Vector3(0, 0.142, -0.05)
+const SIGHT_EYE_DIST := 0.27
+const SIGHT_HALF := Vector2(0.027, 0.022)
+
+func _build_sight(b: Builder) -> void:
+	var c := SIGHT_CENTER
+	var hw := SIGHT_HALF.x
+	var hh := SIGHT_HALF.y
+	var t := 0.0035
+	var length := 0.036
+	# Mount on the carry rail.
+	b.box(P.CHARCOAL, Vector3(0, 0.113, c.z), Vector3(0.036, 0.006, 0.06), false)
+	b.box(P.CHARCOAL, Vector3(0, 0.113 + (c.y - SIGHT_HALF.y - 0.0035 - 0.113) * 0.5, c.z), Vector3(0.03, c.y - SIGHT_HALF.y - 0.0035 - 0.113, 0.03), false)
+	b.box(P.WARM_GREY, Vector3(0, c.y - hh - t * 0.5, c.z), Vector3(hw * 2 + t * 2, t, length), false)
+	# Side walls and top strap: the tube.
+	for sx in [-1.0, 1.0]:
+		b.box(P.WARM_GREY, Vector3(sx * (hw + t * 0.5), c.y, c.z), Vector3(t, hh * 2 + t * 2, length), false)
+	b.box(P.WARM_GREY, Vector3(0, c.y + hh + t * 0.5, c.z), Vector3(hw * 2 + t * 2, t, length), false)
+	# Hoods: slightly larger frames at both ends (rear one in dark rubber).
+	for e in [[c.z - length * 0.5, P.CHARCOAL, 0.006], [c.z + length * 0.5, P.BLACK, 0.003]]:
+		var z: float = e[0]
+		var slot: int = e[1]
+		var w: float = e[2]
+		b.box(slot, Vector3(0, c.y + hh + w * 0.5 + t, z), Vector3(hw * 2 + t * 2 + w * 2, w, 0.012), false)
+		b.box(slot, Vector3(0, c.y - hh - w * 0.5 - t, z), Vector3(hw * 2 + t * 2 + w * 2, w, 0.012), false)
+		for sx in [-1.0, 1.0]:
+			b.box(slot, Vector3(sx * (hw + t + w * 0.5), c.y, z), Vector3(w, hh * 2 + t * 2, 0.012), false)
+	# Windage and elevation turrets, battery cap with a ready lamp.
+	b.cyl_xf(P.CHARCOAL, Transform3D(Basis(Vector3.FORWARD, PI / 2), Vector3(hw + t + 0.006, c.y, c.z)), 0.008, 0.008, 0.012, 8)
+	b.cyl(P.CHARCOAL, Vector3(0, c.y + hh + t + 0.006, c.z), 0.008, 0.008, 0.012, 8)
+	b.cyl_xf(P.STEEL, Transform3D(Basis(Vector3.FORWARD, PI / 2), Vector3(-hw - t - 0.005, c.y - 0.006, c.z)), 0.007, 0.007, 0.01, 8)
+	b.box(P.AMBER, Vector3(-hw - t - 0.0005, c.y + 0.01, c.z + 0.01), Vector3(0.002, 0.004, 0.004), false)
+
+static var _reticle_tex: ImageTexture
+
+static func reticle_tex() -> ImageTexture:
+	if _reticle_tex:
+		return _reticle_tex
+	var n := 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var c := Vector2(n, n) * 0.5
+	for y in n:
+		for x in n:
+			var d := (Vector2(x + 0.5, y + 0.5) - c).length() / (n * 0.5)
+			# Centre dot, a thin broken ring, and soft bloom.
+			var dot := clampf(1.0 - d / 0.07, 0.0, 1.0)
+			var ring := clampf(1.0 - absf(d - 0.62) / 0.035, 0.0, 1.0)
+			var a := atan2(y + 0.5 - c.y, x + 0.5 - c.x)
+			if absf(sin(a * 2.0)) < 0.28:
+				ring = 0.0  # gaps at 0/90/180/270 degrees
+			var glow := clampf(1.0 - d / 0.22, 0.0, 1.0) * 0.25
+			var v := clampf(dot + ring * 0.75 + glow, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, v))
+	_reticle_tex = ImageTexture.create_from_image(img)
+	return _reticle_tex
+
+func _build_sight_glass() -> void:
+	var c := SIGHT_CENTER
+	# Lens: a faint amber-tinted pane with a little sheen.
+	var lens := MeshInstance3D.new()
+	var lq := QuadMesh.new()
+	lq.size = SIGHT_HALF * 2.0
+	var lm := StandardMaterial3D.new()
+	lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	lm.albedo_color = Color(0.85, 0.62, 0.3, 0.07)
+	lm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	lq.material = lm
+	lens.mesh = lq
+	lens.position = c + Vector3(0, 0, -0.016)
+	lens.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_vm_gun.add_child(lens)
+	# Reticle on the lens, additive so it reads against dark and bright.
+	var ret := MeshInstance3D.new()
+	var rq := QuadMesh.new()
+	rq.size = Vector2(0.02, 0.02)
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	rm.albedo_texture = reticle_tex()
+	rm.albedo_color = Color(1.0, 0.45, 0.12)
+	rm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	rq.material = rm
+	ret.mesh = rq
+	ret.position = c + Vector3(0, 0, -0.015)
+	ret.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_vm_gun.add_child(ret)
+
 func _build_viewmodel() -> void:
 	_vm = Node3D.new()
 	_vm.name = "ViewModel"
@@ -167,9 +260,7 @@ func _build_viewmodel() -> void:
 	b.cyl_xf(P.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.01, -0.63)), 0.026, 0.026, 0.05, 8)  # brake
 	b.box(P.BLACK, Vector3(0, 0.01, -0.63), Vector3(0.056, 0.008, 0.03), false)
 	b.box(P.CHARCOAL, Vector3(0, 0.085, -0.05), Vector3(0.03, 0.05, 0.36), false)  # carry rail
-	b.box(P.WARM_GREY, Vector3(0, 0.125, -0.02), Vector3(0.05, 0.05, 0.13), false) # analog sight box
-	b.box(P.BLACK, Vector3(0, 0.125, 0.045), Vector3(0.035, 0.03, 0.005), false)
-	b.box(P.AMBER, Vector3(0, 0.131, 0.0475), Vector3(0.004, 0.012, 0.002), false)  # sight post glow
+	_build_sight(b)
 	b.box(P.CHARCOAL, Vector3(0, -0.1, -0.11), Vector3(0.04, 0.12, 0.05), false)   # grip
 	b.box(P.CHARCOAL, Vector3(0, -0.06, -0.06), Vector3(0.012, 0.05, 0.08), false) # trigger guard
 	b.box(P.CHARCOAL, Vector3(0, 0.0, 0.33), Vector3(0.072, 0.12, 0.04), false)    # butt pad
@@ -183,6 +274,7 @@ func _build_viewmodel() -> void:
 	mi.mesh = b.mesh()
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_vm_gun.add_child(mi)
+	_build_sight_glass()
 	# Magazine as its own node so reloads can pull it.
 	_mag = Node3D.new()
 	_mag.position = Vector3(0, -0.11, 0.12)
@@ -473,6 +565,9 @@ func _unhandled_input(e: InputEvent) -> void:
 		_use_gadget()
 	elif e.is_action_pressed("interact"):
 		if focus:
+			# Consume the press: otherwise the level sees the same E while
+			# already driving and immediately exits the car again.
+			get_viewport().set_input_as_handled()
 			focus.use()
 			Game.play_2d("beep", -10)
 	elif e.is_action_pressed("takedown"):
@@ -566,7 +661,7 @@ func _process(dt: float) -> void:
 		if _flash_t <= 0.0:
 			_flash.visible = false
 			_flash_light.light_energy = 0.0
-	var aiming := drawn and Input.is_action_pressed("aim") and reloading <= 0.0 and player.enabled and not Game.tuning_open()
+	var aiming := drawn and (Input.is_action_pressed("aim") or Game.debug.has("aim")) and reloading <= 0.0 and player.enabled and not Game.tuning_open()
 	player.aiming = aiming
 	ads = move_toward(ads, 1.0 if aiming else 0.0, dt * 7.5)
 	var ease_ads := ads * ads * (3.0 - 2.0 * ads)
@@ -598,7 +693,8 @@ func _process(dt: float) -> void:
 	var sprinting := spd > 5.6 and not aiming and _since_shot > 0.35 and reloading <= 0.0
 	_sprint_pose = move_toward(_sprint_pose, 1.0 if sprinting else 0.0, dt * 5.0)
 	var hip := Vector3(0.19, -0.19, -0.42)
-	var aim := Vector3(0.0, -0.137, -0.3)
+	# Reticle on the camera axis: gun offset = -(sight centre) + eye relief.
+	var aim := -SIGHT_CENTER + Vector3(0, 0, -SIGHT_EYE_DIST)
 	var pos := hip.lerp(aim, ease_ads)
 	var bob_amt := clampf(spd / 7.0, 0.0, 1.0) * (1.0 - ease_ads * 0.85) * (1.0 if player.is_on_floor() else 0.0)
 	var bob := Vector3(sin(t * 7.2) * 0.008, -absf(sin(t * 7.2)) * 0.012, 0) * bob_amt

@@ -14,12 +14,16 @@ var _log: RichTextLabel
 var _detail: Label
 var _mission_btn: Button
 var _end_btn: Button
+var _market: MarketPanel
 var _overlay: PanelContainer
 var _overlay_text: RichTextLabel
 var _ended := false
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_market = MarketPanel.new()
+	_market.closed.connect(func(): _market.visible = false)
+	add_child.call_deferred(_market)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.color = U.BG
@@ -77,6 +81,9 @@ func _ready() -> void:
 	mid.add_child(_mission_btn)
 	_end_btn = U.button("End the night", _end_night, 18)
 	mid.add_child(_end_btn)
+	mid.add_child(U.button("Pataliputra Exchange", func():
+		_market.visible = not _market.visible
+		_market.refresh(true), 16))
 
 	var lp := U.panel()
 	lp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -220,6 +227,7 @@ func _go_mission() -> void:
 
 func _end_night() -> void:
 	var lines: PackedStringArray = Game.sim.end_night()
+	_market.refresh(true)
 	Game.save_campaign()
 	refresh()
 	var t := "[b][color=#D9962B]DAWN. NIGHT %d BEGINS AT DUSK.[/color][/b]\n\n" % int(_state.night)
