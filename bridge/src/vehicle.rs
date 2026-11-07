@@ -86,6 +86,9 @@ pub struct ArcadeCar {
     /// True while the player is driving.
     #[var]
     driver_active: bool,
+    /// Seconds a driverless car has been at rest; past a beat it is put to
+    /// sleep and skipped entirely, so parked cars cost nothing.
+    idle_t: f32,
     /// Raw debug values for the tuning panel overlay.
     #[var]
     debug_text: GString,
@@ -120,6 +123,7 @@ impl IRigidBody3D for ArcadeCar {
             audio_load: 0.0,
             buf: Vec::with_capacity(4096),
             driver_active: false,
+            idle_t: 0.0,
             debug_text: GString::new(),
             base,
         }
@@ -133,7 +137,7 @@ impl IRigidBody3D for ArcadeCar {
             b.set_mass(vt.mass);
             b.set_center_of_mass_mode(CenterOfMassMode::CUSTOM);
             b.set_center_of_mass(Vector3::new(0.0, vt.com_height, 0.0));
-            b.set_can_sleep(false);
+            b.set_can_sleep(true);
             b.set_angular_damp(0.6);
             b.set_linear_damp(0.02);
             b.set_collision_layer(LAYER_VEHICLE);
@@ -205,6 +209,18 @@ impl IRigidBody3D for ArcadeCar {
 
     fn physics_process(&mut self, delta: f64) {
         let dt = delta as f32;
+        if !self.driver_active {
+            if self.base().is_sleeping() {
+                return;
+            }
+            let at_rest = self.base().get_linear_velocity().length() < 0.08 && self.base().get_angular_velocity().length() < 0.08;
+            self.idle_t = if at_rest { self.idle_t + dt } else { 0.0 };
+            if self.idle_t > 1.5 {
+                self.idle_t = 0.0;
+                self.base_mut().set_sleeping(true);
+                return;
+            }
+        }
         let vt = world().tuning.vehicle.clone();
         self.read_input(dt, &vt);
         self.simulate(dt, &vt);
@@ -230,6 +246,12 @@ impl ArcadeCar {
     #[func]
     fn set_driver(&mut self, on: bool) {
         self.driver_active = on;
+        self.idle_t = 0.0;
+        {
+            let mut b = self.base_mut();
+            b.set_can_sleep(!on);
+            if on { b.set_sleeping(false); }
+        }
         if on {
             let fwd = self.forward();
             self.cam_pos = self.base().get_global_position() - fwd * 5.0 + Vector3::new(0.0, 2.0, 0.0);

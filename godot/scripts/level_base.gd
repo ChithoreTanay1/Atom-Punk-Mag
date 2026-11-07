@@ -35,6 +35,8 @@ func _ready() -> void:
 		player.set_look(deg_to_rad(float(Game.debug.get("yaw", "0"))), deg_to_rad(float(Game.debug.get("pitch", "0"))))
 	if Game.debug.has("draw"):
 		rig.set_drawn(true)
+	if Game.debug.has("ragdoll"):
+		_debug_ragdoll.call_deferred()
 	if Game.debug.has("market"):
 		Game.sim.market_trade("pcem", 40)
 		Game.sim.market_event("death:gov_saptavarta", 1.0)
@@ -142,8 +144,10 @@ func spawn_player(pos: Vector3, yaw: float) -> void:
 	add_child(hud)
 	hud.setup(self, rig, player)
 
-func spawn_car(pos: Vector3, yaw: float) -> ArcadeCar:
+func spawn_car(pos: Vector3, yaw: float, paint := Color(0, 0, 0, 0)) -> ArcadeCar:
 	var c := Builder.make_car()
+	if paint.a > 0.0:
+		Builder.paint_car(c, paint)
 	c.position = pos
 	c.rotation.y = yaw
 	add_child(c)
@@ -152,7 +156,52 @@ func spawn_car(pos: Vector3, yaw: float) -> ArcadeCar:
 		func(): enter_car(c))
 	return c
 
+func _debug_ragdoll() -> void:
+	await get_tree().create_timer(float(Game.debug.get("ragdoll_delay", "0.6"))).timeout
+	var best: Npc = null
+	var want_role := str(Game.debug.get("ragdoll_role", ""))
+	for n in get_tree().get_nodes_in_group("npc"):
+		var npc := n as Npc
+		if npc and want_role != "" and npc.role != want_role:
+			continue
+		if npc and Game.debug.has("ragdoll_tint") and int(npc.get_meta("tint", 0)) != int(Game.debug.ragdoll_tint):
+			continue
+		if npc and npc.alive and (best == null or npc.global_position.distance_to(player.global_position) < best.global_position.distance_to(player.global_position)):
+			best = npc
+	if best and Game.debug.has("ragdoll_role"):
+		# Stand 4 m in front of the target, looking at it, then wait a beat.
+		var f := -best.global_basis.z
+		var dist := float(Game.debug.get("ragdoll_dist", "4"))
+		player.global_position = best.global_position + f * dist + f.cross(Vector3.UP) * dist * 0.3
+		var d := best.global_position + Vector3(0, 0.9, 0) - player.get_eye_position()
+		player.set_look(atan2(-d.x, -d.z), atan2(d.y, Vector2(d.x, d.z).length()))
+		best.set_physics_process(false)
+		await get_tree().create_timer(float(Game.debug.get("ragdoll_wait", "0.3"))).timeout
+	if best:
+		print("ragdoll test: ", best.role, " at ", best.global_position)
+		best.apply_damage(9999.0, player.global_position, Game.debug.get("ragdoll") == "head")
+
+## Physical death: hand the body to the Active Ragdoll addon, knocked along
+## the killing blow (bullet, knife, takedown or a car).
+func spawn_ragdoll(n: Npc) -> void:
+	for c in get_tree().get_nodes_in_group("cars"):
+		var ac := c as ArcadeCar
+		if ac and ac.global_position.distance_to(n.global_position) < 5.0 and ac.linear_velocity.length() > 3.0:
+			var v := ac.linear_velocity
+			RagdollCorpse.spawn(n, v * 9.0 + Vector3.UP * v.length() * 3.0, "Hips", "limp")
+			return
+	var from: Vector3 = n.get_last_hit_from()
+	if from == Vector3.ZERO:
+		from = player.global_position
+	var dir := n.global_position - from
+	dir.y = 0.0
+	dir = dir.normalized() if dir.length() > 0.01 else -n.global_basis.z
+	var knock := float(n.get_meta("knock", 26.0))
+	var how := str(n.get_meta("knock_how", "die"))
+	RagdollCorpse.spawn(n, (dir + Vector3.UP * 0.15) * knock, "Head" if n.get_last_hit_head() else "UpperChest", how)
+
 func enter_car(c: ArcadeCar) -> void:
+	c.freeze = false
 	if driving:
 		return
 	car = c

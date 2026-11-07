@@ -17,8 +17,8 @@ Every asset in the project gets a row here before it enters `/godot`. No row, no
 |---|---|---|---|---|---|---|---|---|---|
 | proc_kit_architecture | Walls, slabs, stairs, columns, towers, saucer rings (Builder/KitBuilder, batched one surface per material) | ext / int | n/a (generated in `godot/scripts/builder.gd`, `bridge/src/kit.rs`) | Own work | Own work | per level: 19k-45k on screen | none (procedural shader) | Yes, palette in `palette.gd` | Vertex-colour AO; box occluders on large blocks |
 | proc_props | Lamp post, banner pole, tree, planter, facade fin, stall, crate, cone, chair, chandelier, tea trolley | ext / int | n/a (`builder.gd`) | Own work | Own work | est. under 500 each (not measured per asset) | none | Yes | MultiMesh with visibility ranges |
-| proc_humanoid | Guard, governor, courier, civilian bodies with limb nodes | ext / int | n/a (`builder.gd`) | Own work | Own work | est. under 500 | none | Yes | Procedural limb animation in `npc.rs` |
-| veh_sedan_boxy | Governor's car and parked traffic | vehicle | n/a (`builder.gd`) | Own work | Own work | est. under 2k | none | Yes | Wheels are separate nodes |
+| proc_humanoid | Guard, governor, courier, civilian bodies with limb nodes | ext / int | n/a (`builder.gd`, now built from `body_kit.gd`) | Own work | Own work | est. under 500 | none | Yes | Procedural limb animation in `npc.rs` |
+| veh_sedan_boxy | Old boxy saloon (`car_prop`), no longer placed; the street now uses drivable Kestrels | vehicle | n/a (`builder.gd`) | Own work | Own work | est. under 2k | none | Yes | Kept for future props |
 | wpn_carbine_vajra | Bullpup carbine view model with Label3D ammo counter | weapon | n/a (`player_rig.gd`) | Own work | Own work | est. under 1k | none | Yes | |
 | shd_kit | World material: concrete, walnut, marble, carpet, steel, foliage, road, fabric, facade windows | all | `godot/shaders/kit.gdshader` | Own work | Own work | - | none | n/a | Wetness and dusk window glow driven at runtime |
 | shd_post / shd_crt | Grade, vignette, grain, damage tint; CRT screens (in-world only) | tech | `godot/shaders/` | Own work | Own work | - | none | n/a | |
@@ -33,6 +33,12 @@ Every asset in the project gets a row here before it enters `/godot`. No row, no
 | int_kestrel80_cabin | Cockpit: burgundy dash, binnacle with two electronic gauges, VFD speed, four-spoke wheel, centre stack (vents, climate VFD, cassette deck), T-bar shifter, velour seats, door cards | vehicle / int | n/a (`godot/scripts/car_cockpit.gd`) | Own work | Own work | est. under 2k | gauge face 128 px generated at runtime | Yes (new slots PLUSH, DASH_DARK) | Layout from the user's 80s interior reference (`refs/Screenshot 2026-11-07 172247.png`), not traced; one batched mesh plus Label3D readouts |
 | wpn_reflex_sight | Open reflex sight on the carbine: hollow housing, tinted lens, amber dot-and-ring reticle; ADS pose puts the reticle on the camera axis | weapon | n/a (`player_rig.gd`) | Own work | Own work | under 200 | reticle 128 px generated at runtime | Yes | Replaces the solid "analog sight box" |
 | ui_exchange | Ticker tape (HUD) and the exchange terminal panel (quote board, sparklines, telex wire) | UI | n/a (`hud.gd`, `market_panel.gd`) | Own work | Own work | - | none | Yes (amber / green / ivory) | Drawn with Control nodes; no textures |
+| addon_active_ragdoll | Active Ragdoll v0.2.0 (`godot/addons/active_ragdoll`): physical bones, muscle-driven fall and limp | npc | https://github.com/DanilKhmyrov/godot-active-ragdoll (asset library 5575), commit c90d8cb6 | Danil Khmyrov | MIT | - | none | n/a | Copied unmodified with its LICENSE. Used for death ragdolls via `ragdoll_corpse.gd`. Checked: no file, network or OS calls |
+| proc_body_kit | Humanoid part kit (pelvis, abdomen, chest, head, upper arm, forearm, thigh, shin). Guard plate armour (kettle helmet, breastplate, pauldrons, vambraces, greaves, tunic) and elite carbon armour (closed visor helmet, ochre cape and scarf, tassets) | npc | n/a (`godot/scripts/body_kit.gd`) | Own work | Own work | est. under 1.2k per body | none | Yes (new slots ARMOR, TUNIC, CARBON, CAPE) | Outfits from the user's Gemini-generated reference image (`refs/Gemini_Generated_Image_wk9unswk9unswk9u.jpg`), not traced. The same parts drive the living pivots and the ragdoll bones |
+| wpn_pistol_mriga | Mriga 9 suppressed pistol: slide, ribbed suppressor, notch-and-post iron sights (brass front cap), drop-out magazine | weapon | n/a (`player_rig.gd`) | Own work | Own work | under 400 | none | Yes | ADS lines up the sights on the camera axis |
+| wpn_knife_nakha | Nakha knife (walnut grip, blackened blade) plus a sheath of throwing blades; thrown blade mesh | weapon | n/a (`player_rig.gd`) | Own work | Own work | under 200 | none | Yes | |
+| wpn_grapple_garuda | Garuda Line launcher (brass spool), three-prong hook, rope (stretched box) | weapon | n/a (`player_rig.gd`) | Own work | Own work | under 400 | none | Yes | Pull physics in `bridge/src/player.rs` |
+| sfx_procedural_3 | silenced (suppressed shot), swish, stab, grapple (launch), winch (reel loop) | tech | `bridge/src/sfx.rs` | Own work | Own work | - | - | n/a | Synthesised at startup |
 | font_mono | System monospace font (SystemFont lookup) | UI | OS-provided | OS vendor | Not shipped | - | - | n/a | Nothing bundled; falls back to Godot default |
 
 ## Budgets (starting values, from `instructions.md`)
@@ -65,6 +71,9 @@ Assets over budget need a note here and a reason.
 
 List every CC-BY asset here with author, title and URL.
 
-No CC-BY assets yet. CC0 shaders used, credited as a courtesy:
+No CC-BY assets yet. MIT code:
+- "Active Ragdoll" by Danil Khmyrov, https://github.com/DanilKhmyrov/godot-active-ragdoll (MIT, licence file kept in `godot/addons/active_ragdoll/LICENSE`)
+
+CC0 shaders used, credited as a courtesy:
 - "PS1/PSX PostProcessing" by Grau, https://godotshaders.com/shader/ps1-psx-postprocessing/ (CC0)
 - "Simple rain/snow shader" by mo32167, https://godotshaders.com/shader/simple-rain-snow-shader/ (CC0)

@@ -13,6 +13,7 @@ var nodes := {}
 var locations := {}
 var gov_activity := ""
 var gov_car: Node3D
+var _gov_tw: Tween
 var alarm_player: AudioStreamPlayer3D
 var ambience: AudioStreamPlayer
 var beacons: Array[MeshInstance3D] = []
@@ -439,14 +440,9 @@ func _build_grounds() -> void:
 	for x in [-20.0, -12.0, 12.0, 20.0]:
 		banners.append(Transform3D(Basis(Vector3.UP, PI / 2), Vector3(x, 0, 27)))
 	Builder.scatter(self, Builder.banner_pole(), banners, 140.0, false)
-	# Governor's car (prop; leaves at 19:00).
-	gov_car = Builder.car_prop(P.CHARCOAL)
-	gov_car.position = Vector3(27, 0.2, 12)
-	gov_car.rotation.y = PI
-	add_child(gov_car)
-	var gcb := Builder.new()
-	gcb.kit.add_collider(Builder.xf(Vector3(27, 0.9, 12)), Vector3(1.9, 1.6, 4.5))
-	gcb.commit(self, "GovCarCol")
+	# Governor's car: a black Kestrel, drivable like the rest. It is driven
+	# away on a script at 19:00 (frozen for the tween, physical again after).
+	gov_car = spawn_car(Vector3(27, 0.8, 12), PI, Color("#141618"))
 	for p in [Vector3(-25, 3.7, 10.5), Vector3(8.5, 2.6, 26)]:
 		var o := OmniLight3D.new()
 		o.position = p
@@ -578,16 +574,13 @@ func _build_detail() -> void:
 		col.kit.add_collider(Transform3D(t.basis, t.origin + Vector3(0, 0.45, 0)), Vector3(0.3, 0.9, 0.3))
 	for t in benches:
 		col.kit.add_collider(Transform3D(t.basis, t.origin + Vector3(0, 0.3, 0)), Vector3(1.9, 0.6, 0.5))
-	# Parked cars along both curbs, in a few period colours.
-	var slots := [P.CHARCOAL, P.TEAL, P.BEIGE, P.PETROL, P.TERRACOTTA, P.WARM_GREY]
+	col.commit(self, "DetailCol")
+	# Parked cars along both curbs: every one a drivable Kestrel 80, in a few
+	# period colours. Idle cars sleep in the physics engine, so they are cheap.
+	var paints := [Color("#2B2F31"), Color("#2F6E73"), Color("#C9B88F"), Color("#24414F"), Color("#A2512F"), Color("#8E8A82"), Color("#6E1F24")]
 	var spots := [[-8.2, 60.0, 0.0], [-8.2, 74.0, 0.0], [-8.2, 128.0, 0.0], [8.2, 66.0, PI], [8.2, 98.0, PI], [8.2, 146.0, PI], [-8.2, 156.0, 0.0]]
 	for i in spots.size():
-		var cp := Builder.car_prop(slots[i % slots.size()])
-		cp.position = Vector3(spots[i][0], 0.2, spots[i][1])
-		cp.rotation.y = spots[i][2]
-		add_child(cp)
-		col.kit.add_collider(Builder.xf(Vector3(spots[i][0], 0.95, spots[i][1]), spots[i][2]), Vector3(1.9, 1.5, 4.5))
-	col.commit(self, "DetailCol")
+		spawn_car(Vector3(spots[i][0], 0.8, spots[i][1]), spots[i][2], paints[i % paints.size()])
 	# Compound: hedges around the court, wire on the walls, camera eyes.
 	var hedges := []
 	for z in [6.0, 10.5, 15.0]:
@@ -719,9 +712,9 @@ func _spawn_npcs() -> void:
 	_spawn_npc("guard", "gate_post", ["gate_post", "gate_in"])
 	_spawn_npc("guard", "court_s", ["cs_w", "pool_w", "cn_w", "court_n", "cn_e", "pool_e", "cs_e", "court_s"])
 	_spawn_npc("guard", "garden", ["garden", "pavilion", "sw", "pavilion", "garden", "side_w", "culvert_in"])
-	_spawn_npc("guard", "lobby_w", ["lobby_w", "lobby_s", "lobby_e", "stair_foot"])
+	_spawn_npc("guard", "lobby_w", ["lobby_w", "lobby_s", "lobby_e", "stair_foot"], 1)
 	_spawn_npc("guard", "up_land", ["up_land", "up_ne", "hall_c", "hall_tdoor", "terrace_he", "terrace_c", "terrace_he", "hall_tdoor", "hall_c"])
-	_spawn_npc("guard", "e_hall", ["e_hall", "sr_door"])
+	_spawn_npc("guard", "e_hall", ["e_hall", "sr_door"], 1)
 	_spawn_npc("guard", "yard_c", ["yard_w", "yard_c", "yard_e", "yard_c"])
 	_spawn_npc("guard", "motor", ["motor", "se", "motor", "side_e"])
 	var extra := int(_info.get("extra_guards", 0))
@@ -988,11 +981,25 @@ func _on_gov_arrived() -> void:
 			_tea_timer = 6.0
 		"depart":
 			Game.sim.governor_escaped()
-			var tw := create_tween()
-			tw.tween_property(gov, "position", gov_car.position, 0.6)
-			tw.tween_callback(func(): gov.visible = false)
-			tw.tween_property(gov_car, "position", Vector3(0, 0.2, 12), 3.0)
-			tw.tween_property(gov_car, "position", Vector3(0, 0.2, 60), 4.0)
+			var gc := gov_car as ArcadeCar
+			if driving and car == gc:
+				return
+			var y := gc.position.y
+			gc.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+			gc.freeze = true
+			_gov_tw = create_tween()
+			_gov_tw.tween_property(gov, "position", gc.position, 0.6)
+			_gov_tw.tween_callback(func(): gov.visible = false)
+			_gov_tw.tween_property(gc, "position", Vector3(0, y, 12), 3.0)
+			_gov_tw.parallel().tween_property(gc, "rotation:y", PI * 0.5, 1.2)
+			_gov_tw.tween_property(gc, "rotation:y", PI, 0.8)
+			_gov_tw.parallel().tween_property(gc, "position", Vector3(0, y, 60), 4.0)
+			_gov_tw.tween_callback(func(): gc.freeze = false)
+
+func enter_car(c: ArcadeCar) -> void:
+	if c == gov_car and _gov_tw and _gov_tw.is_running():
+		_gov_tw.kill()
+	super(c)
 
 func _on_npc_died(n: Npc, silent: bool) -> void:
 	if n == gov:
@@ -1001,6 +1008,7 @@ func _on_npc_died(n: Npc, silent: bool) -> void:
 		Game.sim.npc_killed()
 	if not silent:
 		Game.play_3d("thud", n.global_position, -4)
+	spawn_ragdoll(n)
 
 func on_npc_killed(_n: Npc) -> void:
 	pass  # Kills are reported through Npc.died.

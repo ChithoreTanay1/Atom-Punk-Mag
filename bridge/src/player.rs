@@ -82,6 +82,10 @@ pub struct FpsController {
     /// Current noise radius in metres (for AI hearing).
     #[var]
     noise_radius: f32,
+    /// Grapple anchor while the line is winding the player in.
+    grapple: Option<Vector3>,
+    grapple_t: f32,
+    grapple_stuck: f32,
 
     base: Base<CharacterBody3D>,
 }
@@ -122,6 +126,9 @@ impl ICharacterBody3D for FpsController {
             exposure: 1.0,
             fov_scale: 1.0,
             noise_radius: 0.0,
+            grapple: None,
+            grapple_t: 0.0,
+            grapple_stuck: 0.0,
             base,
         }
     }
@@ -196,6 +203,10 @@ impl ICharacterBody3D for FpsController {
 
         if self.mantle.is_some() {
             self.tick_mantle(dt, &mt);
+            return;
+        }
+        if self.grapple.is_some() {
+            self.tick_grapple(dt, &mt);
             return;
         }
 
@@ -389,6 +400,26 @@ impl FpsController {
         self.add_look(yaw_deg.to_radians(), pitch_deg.to_radians());
     }
 
+    /// Grapple: wind the player toward `anchor` until close, stuck, or jump.
+    #[func]
+    fn start_grapple(&mut self, anchor: Vector3) {
+        self.grapple = Some(anchor);
+        self.grapple_t = 0.0;
+        self.grapple_stuck = 0.0;
+        self.sliding = false;
+        self.mantle = None;
+    }
+
+    #[func]
+    fn stop_grapple(&mut self) {
+        self.grapple = None;
+    }
+
+    #[func]
+    fn is_grappling(&self) -> bool {
+        self.grapple.is_some()
+    }
+
     #[func]
     fn get_camera(&self) -> Option<Gd<Camera3D>> {
         self.camera.clone()
@@ -558,6 +589,45 @@ impl FpsController {
         self.mantle = Some(Mantle { from: pos, to: target, t: 0.0 });
         self.base_mut().set_velocity(Vector3::ZERO);
         true
+    }
+
+    fn tick_grapple(&mut self, dt: f32, mt: &MovementTuning) {
+        let Some(anchor) = self.grapple else { return };
+        self.grapple_t += dt;
+        let pos = self.base().get_global_position() + Vector3::new(0.0, 1.0, 0.0);
+        let to = anchor - pos;
+        let dist = to.length();
+        let dir = if dist > 1e-3 { to / dist } else { Vector3::ZERO };
+        let mut vel = self.base().get_velocity();
+        // Reel in: velocity eases toward the line, plus a little lift so the
+        // player clears the lip of a roof instead of hanging under it.
+        let reel = 24.0;
+        let want = dir * reel + Vector3::new(0.0, 1.2, 0.0);
+        vel = vel.lerp(want, (1.0 - (-7.0 * dt).exp()).min(1.0));
+        let jump = Input::singleton().is_action_just_pressed("jump");
+        let release = dist < 1.4 || jump || self.grapple_t > 3.5;
+        if release {
+            self.grapple = None;
+            // Pop over the edge on arrival; keep momentum on a jump release.
+            vel = if jump { vel + Vector3::new(0.0, mt.jump_velocity * 0.8, 0.0) } else { dir * 4.0 + Vector3::new(0.0, mt.jump_velocity * 0.9, 0.0) };
+        }
+        self.base_mut().set_velocity(vel);
+        self.base_mut().move_and_slide();
+        let moved = self.base().get_real_velocity().length();
+        if moved < 1.5 && self.grapple_t > 0.25 {
+            self.grapple_stuck += dt;
+            if self.grapple_stuck > 0.3 {
+                // Snagged on geometry: let go with a hop.
+                self.grapple = None;
+                let v = Vector3::new(0.0, mt.jump_velocity, 0.0) + dir * 3.0;
+                self.base_mut().set_velocity(v);
+            }
+        } else {
+            self.grapple_stuck = 0.0;
+        }
+        self.was_on_floor = self.base().is_on_floor();
+        self.prev_vel_y = self.base().get_velocity().y;
+        self.noise_radius = 4.0;
     }
 
     fn tick_mantle(&mut self, dt: f32, mt: &MovementTuning) {

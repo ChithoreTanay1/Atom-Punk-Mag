@@ -75,19 +75,57 @@ var _shells: Array = []     # {mi, vel, spin, life, floor, bounces}
 var _shell_i := 0
 var _fx := {}               # kind -> {list, i}
 
+# Loadout: carbine, silenced pistol, knife (slash + throws), grapple line.
+const DEFAULT_LOADOUT := ["wpn_carbine_vajra", "wpn_pistol_mriga", "wpn_knife_nakha", "wpn_grapple_garuda"]
+const SHORT := {"wpn_carbine_vajra": "Carbine", "wpn_pistol_mriga": "Pistol", "wpn_knife_nakha": "Knife", "wpn_grapple_garuda": "Line"}
+const HOOK_SPEED := 70.0
+var loadout: Array = []     # [{id, def}]
+var slot := 0
+var _models := {}           # id -> {node, mag, selector, label, flash, sight, eye, hip, ads, ...}
+var _cfg := {}
+var _free := {}             # free-play ammo per weapon (no mission)
+var _slash_t := 0.0
+var _throw_t := 0.0
+var _knives: Array = []     # {node, vel, stuck}
+var _hook: Node3D
+var _rope: MeshInstance3D
+var _hook_t := -1.0         # >= 0 while the hook is in flight
+var _hook_dur := 0.1
+var _hook_from := Vector3.ZERO
+var _hook_to := Vector3.ZERO
+var _hook_hit := false
+var _winch: AudioStreamPlayer
+
 func setup(p: FpsController, lvl: Node) -> void:
 	player = p
 	level = lvl
 	cam = p.get_camera()
 	var info: Dictionary = Game.sim.mission_info()
-	weapon_id = info.get("weapon", "wpn_carbine_vajra")
-	weapon = Game.sim.weapon_def(weapon_id)
-	if weapon.is_empty():
-		weapon = {"fire_interval": 0.1, "spread_deg": 2.0, "ads_spread_deg": 0.3, "recoil_pitch_deg": 1.0, "recoil_yaw_deg": 0.3, "range": 120.0, "noise_radius": 45.0, "reload_time": 2.0, "mag_size": 24, "has_auto": true, "name": "Carbine"}
-	free_ammo = int(weapon.get("mag_size", 24))
+	var ids: Array = []
+	for id in info.get("weapons", []):
+		ids.append(str(id))
+	if ids.is_empty():
+		ids = DEFAULT_LOADOUT.duplicate()
+	for id in ids:
+		var def: Dictionary = Game.sim.weapon_def(id)
+		if def.is_empty():
+			continue
+		def["short"] = SHORT.get(id, def.get("name", id))
+		loadout.append({"id": id, "def": def})
+		_free[id] = int(def.get("mag_size", 0))
+	if loadout.is_empty():
+		loadout.append({"id": "wpn_carbine_vajra", "def": {"fire_interval": 0.1, "spread_deg": 2.0, "ads_spread_deg": 0.3, "recoil_pitch_deg": 1.0, "recoil_yaw_deg": 0.3, "range": 120.0, "noise_radius": 45.0, "reload_time": 2.0, "mag_size": 24, "has_auto": true, "name": "Carbine", "kind": "gun", "short": "Carbine"}})
+		_free["wpn_carbine_vajra"] = 24
+	weapon_id = loadout[0].id
+	weapon = loadout[0].def
+	free_ammo = _free[weapon_id]
 	refresh_gadgets()
 	_build_viewmodel()
 	_build_fx()
+	_build_line()
+	_equip(0, true)
+	if Game.debug.has("weapon"):
+		_equip(int(Game.debug.weapon) - 1, true)
 	p.footstep.connect(_on_footstep)
 	p.landed.connect(_on_landed)
 
@@ -338,6 +376,189 @@ func _build_viewmodel() -> void:
 	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_vm_gun.add_child(_flash)
 	_vm.visible = false
+	var carbine := {"node": _vm_gun, "mag": _mag, "selector": _selector, "label": _ammo_label,
+		"flash": Vector3(0, 0.01, -0.67), "sight": SIGHT_CENTER, "eye": SIGHT_EYE_DIST,
+		"hip": Vector3(0.19, -0.19, -0.42), "ads": true, "flash_scale": 1.0, "mag_rest": Vector3(0, -0.11, 0.12)}
+	var have_carbine := false
+	for e in loadout:
+		var kind := str(e.def.get("kind", "gun"))
+		if kind == "gun" and not e.def.get("suppressed", false) and not have_carbine:
+			_models[e.id] = carbine
+			have_carbine = true
+		elif kind == "gun":
+			_models[e.id] = _build_pistol()
+		elif kind == "melee":
+			_models[e.id] = _build_knife()
+		else:
+			_models[e.id] = _build_grapple()
+	if not have_carbine:
+		_vm_gun.visible = false
+
+func _model_root() -> Node3D:
+	var n := Node3D.new()
+	n.visible = false
+	_vm.add_child(n)
+	return n
+
+func _mesh_into(n: Node3D, b: Builder) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = b.mesh()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	n.add_child(mi)
+
+## Mriga 9: compact pistol with a long ribbed suppressor and iron sights
+## (rear notch, brass-capped front post) that line up in ADS.
+func _build_pistol() -> Dictionary:
+	var n := _model_root()
+	var b := Builder.new(0.15)
+	b.box(P.CHARCOAL, Vector3(0, 0.032, -0.05), Vector3(0.03, 0.034, 0.19), false)    # slide
+	for i in 5:
+		b.box(P.BLACK, Vector3(0, 0.035, 0.02 + i * 0.008), Vector3(0.032, 0.026, 0.003), false)  # serrations
+	b.box(P.BEIGE, Vector3(0, 0.0, -0.045), Vector3(0.028, 0.03, 0.17), false)        # frame
+	b.box_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, 0.22), Vector3(0, -0.065, 0.025)), Vector3(0.03, 0.11, 0.05))  # grip
+	b.box(P.CHARCOAL, Vector3(0, -0.028, -0.03), Vector3(0.008, 0.03, 0.05), false)   # trigger guard
+	b.cyl_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.027, -0.24)), 0.019, 0.019, 0.17, 10)  # suppressor
+	for i in 5:
+		b.cyl_xf(P.BLACK, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.027, -0.18 - i * 0.026)), 0.0205, 0.0205, 0.006, 10)
+	b.cyl_xf(P.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.027, -0.327)), 0.017, 0.017, 0.006, 10)
+	# Sights: rear notch (two posts) and a front post with a brass cap.
+	for sx in [-1.0, 1.0]:
+		b.box(P.BLACK, Vector3(sx * 0.0075, 0.054, 0.035), Vector3(0.007, 0.01, 0.008), false)
+	b.box(P.BLACK, Vector3(0, 0.054, -0.135), Vector3(0.004, 0.01, 0.006), false)
+	b.box(P.BRASS, Vector3(0, 0.0595, -0.135), Vector3(0.004, 0.003, 0.006), false)
+	b.box(P.AMBER, Vector3(0.016, 0.03, 0.02), Vector3(0.004, 0.006, 0.006), false)   # chamber lamp
+	_mesh_into(n, b)
+	var mag := Node3D.new()
+	mag.position = Vector3(0, -0.1, 0.03)
+	var mb := Builder.new(0.1)
+	mb.box(P.WARM_GREY, Vector3.ZERO, Vector3(0.024, 0.06, 0.04), false)
+	mb.box(P.CHARCOAL, Vector3(0, -0.032, 0), Vector3(0.028, 0.008, 0.044), false)
+	_mesh_into(mag, mb)
+	n.add_child(mag)
+	return {"node": n, "mag": mag, "flash": Vector3(0, 0.027, -0.335), "sight": Vector3(0, 0.0575, 0.035),
+		"eye": 0.3, "hip": Vector3(0.18, -0.17, -0.4), "ads": true, "flash_scale": 0.3, "mag_rest": Vector3(0, -0.1, 0.03)}
+
+## Nakha knife: walnut grip, blackened blade, steel edge; spare throwing
+## blades in a sheath on the off hand.
+func _build_knife() -> Dictionary:
+	var n := _model_root()
+	var b := Builder.new(0.1)
+	b.box(P.WALNUT, Vector3(0, 0, 0.02), Vector3(0.028, 0.032, 0.11), false)
+	for i in 3:
+		b.box(P.BLACK, Vector3(0, 0, -0.01 + i * 0.03), Vector3(0.03, 0.034, 0.006), false)
+	b.box(P.BRASS, Vector3(0, 0, 0.078), Vector3(0.03, 0.03, 0.01), false)
+	b.box(P.BLACK, Vector3(0, 0, -0.04), Vector3(0.07, 0.016, 0.014), false)        # guard
+	b.box(P.CHARCOAL, Vector3(0, 0.002, -0.13), Vector3(0.005, 0.034, 0.17), false)  # blade
+	b.box(P.CHROME, Vector3(0, -0.016, -0.13), Vector3(0.006, 0.005, 0.17), false)   # edge
+	b.box_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, 0.5), Vector3(0, 0.006, -0.222)), Vector3(0.005, 0.025, 0.04))  # tip
+	_mesh_into(n, b)
+	var sheath := Node3D.new()
+	sheath.position = Vector3(-0.42, -0.1, 0.02)
+	var sb := Builder.new(0.1)
+	sb.box(P.LEATHER, Vector3.ZERO, Vector3(0.09, 0.03, 0.16), false)
+	for i in 3:
+		sb.box(P.STEEL, Vector3(-0.025 + i * 0.025, 0.02, -0.02), Vector3(0.012, 0.012, 0.12), false)
+	_mesh_into(sheath, sb)
+	n.add_child(sheath)
+	return {"node": n, "flash": Vector3(0, 0, -0.2), "eye": 0.3,
+		"hip": Vector3(0.17, -0.17, -0.38), "ads": false, "flash_scale": 0.0, "sheath": sheath}
+
+## Garuda Line: pistol-grip launcher with a brass spool and a three-pronged hook.
+func _build_grapple() -> Dictionary:
+	var n := _model_root()
+	var b := Builder.new(0.15)
+	b.box(P.WARM_GREY, Vector3(0, 0.0, -0.05), Vector3(0.06, 0.07, 0.22), false)
+	b.box(P.CHARCOAL, Vector3(0, -0.07, 0.02), Vector3(0.035, 0.1, 0.05), false)
+	b.cyl_xf(P.BRASS, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(0, 0.0, 0.02)), 0.045, 0.045, 0.075, 12)  # spool
+	b.cyl_xf(P.CHARCOAL, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(0, 0.0, 0.02)), 0.05, 0.05, 0.02, 12)
+	b.cyl_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.01, -0.19)), 0.022, 0.026, 0.08, 10)
+	b.box(P.AMBER, Vector3(0.031, 0.02, -0.08), Vector3(0.004, 0.01, 0.02), false)
+	b.box(P.CRT, Vector3(-0.031, 0.01, -0.06), Vector3(0.004, 0.03, 0.05), false)
+	_mesh_into(n, b)
+	var hook := Node3D.new()
+	hook.position = Vector3(0, 0.01, -0.25)
+	hook.add_child(_hook_mesh_instance())
+	n.add_child(hook)
+	return {"node": n, "flash": Vector3(0, 0.01, -0.26), "eye": 0.3,
+		"hip": Vector3(0.21, -0.2, -0.44), "ads": false, "flash_scale": 0.0, "hook": hook}
+
+func _hook_mesh_instance() -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = Builder.cached("grapple_hook", func():
+		var b := Builder.new(0.0)
+		b.cyl_xf(P.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3.ZERO), 0.012, 0.012, 0.07, 6)
+		for i in 3:
+			var a := TAU * i / 3.0
+			var d := Vector3(cos(a), sin(a), 0)
+			# Prongs swept back from the tip.
+			var bas := Basis.looking_at((Vector3(0, 0, 1) + d * 0.9).normalized(), Vector3(0, 0, 1).cross(d))
+			b.box_xf(P.STEEL, Transform3D(bas, d * 0.022 + Vector3(0, 0, -0.03)), Vector3(0.008, 0.008, 0.055))
+		return b.mesh())
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+## Rope and flying hook live in the world, not in the view model.
+func _build_line() -> void:
+	var root := get_tree().current_scene
+	_rope = MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.014, 0.014, 1.0)
+	_rope.mesh = bm
+	_rope.material_override = P.mats()[P.CHARCOAL]
+	_rope.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_rope.visible = false
+	root.add_child.call_deferred(_rope)
+	_hook = Node3D.new()
+	_hook.add_child(_hook_mesh_instance())
+	_hook.visible = false
+	root.add_child.call_deferred(_hook)
+	_winch = AudioStreamPlayer.new()
+	_winch.stream = Game.sfx.get("winch")
+	_winch.volume_db = -12.0
+	add_child(_winch)
+
+## Draw weapon `i` from the loadout (ammo is kept per weapon).
+func _equip(i: int, initial := false) -> void:
+	if loadout.is_empty():
+		return
+	i = posmod(i, loadout.size())
+	if i == slot and not initial:
+		return
+	_free[weapon_id] = free_ammo
+	slot = i
+	weapon_id = loadout[i].id
+	weapon = loadout[i].def
+	if mission_on():
+		Game.sim.switch_weapon(weapon_id)
+	free_ammo = _free.get(weapon_id, 0)
+	for id in _models:
+		(_models[id].node as Node3D).visible = false
+	_cfg = _models[weapon_id]
+	_vm_gun = _cfg.node
+	_vm_gun.visible = true
+	_mag = _cfg.get("mag")
+	_selector = _cfg.get("selector")
+	_ammo_label = _cfg.get("label")
+	_flash.reparent(_vm_gun, false)
+	_flash.position = _cfg.flash
+	_flash_light.reparent(_vm_gun, false)
+	_flash_light.position = _cfg.flash + Vector3(0, 0, -0.08)
+	reloading = 0.0
+	_slash_t = 0.0
+	_throw_t = 0.0
+	if not weapon.get("has_auto", false):
+		auto_mode = false
+	if not initial:
+		_release_line()
+		_draw_t = 0.32
+		if not drawn:
+			set_drawn(true)
+		else:
+			Game.play_2d("dry", -8, 0.9)
+			_krv += Vector3(-2.0, 0, 3.0)
+
+func _kind() -> String:
+	return str(weapon.get("kind", "gun"))
 
 func _particle_pool(kind: String, n: int, amount: int, life: float, vmin: float, vmax: float, grav: float,
 		size: float, spread: float, ramp: Gradient, additive: bool, damping := 0.0, scale_curve := true) -> void:
@@ -552,6 +773,22 @@ func _unhandled_input(e: InputEvent) -> void:
 		return
 	if e.is_action_pressed("holster"):
 		set_drawn(not drawn)
+	elif e.is_action_pressed("weapon_1"):
+		_equip(0)
+	elif e.is_action_pressed("weapon_2"):
+		_equip(1)
+	elif e.is_action_pressed("weapon_3"):
+		_equip(2)
+	elif e.is_action_pressed("weapon_4"):
+		_equip(3)
+	elif e.is_action_pressed("weapon_next"):
+		_equip(slot + 1)
+	elif e.is_action_pressed("weapon_prev"):
+		_equip(slot - 1)
+	elif e.is_action_pressed("aim") and drawn and _kind() == "melee":
+		_throw_knife()
+	elif e.is_action_pressed("aim") and _kind() == "grapple":
+		_release_line()
 	elif e.is_action_pressed("reload"):
 		_reload()
 	elif e.is_action_pressed("fire_mode") and weapon.get("has_auto", false):
@@ -576,6 +813,8 @@ func _unhandled_input(e: InputEvent) -> void:
 		set_drawn(true)
 
 func set_drawn(on: bool) -> void:
+	if not on:
+		_release_line()
 	drawn = on
 	player.weapon_raised = on
 	_vm.visible = on
@@ -585,7 +824,7 @@ func set_drawn(on: bool) -> void:
 		_krv += Vector3(-3.0, 0, 4.0)
 
 func _reload() -> void:
-	if not drawn or reloading > 0.0:
+	if not drawn or reloading > 0.0 or _kind() != "gun":
 		return
 	if mission_on():
 		var st: Dictionary = Game.mstate()
@@ -621,7 +860,9 @@ func _physics_process(dt: float) -> void:
 		var r := minf(_recoil_debt, _recoil_debt * dt * 9.0 + dt * 0.5)
 		_recoil_debt -= r
 		player.apply_recoil(-r, 0.0)
+	_update_knives(dt)
 	if not player.enabled:
+		_release_line()
 		return
 	var dbg_fire := Game.debug.has("fire")
 	var trig := Input.is_action_pressed("fire") or dbg_fire
@@ -629,8 +870,17 @@ func _physics_process(dt: float) -> void:
 	if not trig:
 		_shots_in_burst = 0
 	if want_fire and cooldown <= 0.0:
-		if auto_mode or dbg_fire or Input.is_action_just_pressed("fire"):
-			_fire()
+		match _kind():
+			"gun":
+				if auto_mode or dbg_fire or Input.is_action_just_pressed("fire"):
+					_fire()
+			"melee":
+				_slash()
+			"grapple":
+				if Input.is_action_just_pressed("fire") or (dbg_fire and not has_meta("dbg_grappled")):
+					set_meta("dbg_grappled", true)
+					print("grapple from ", player.global_position)
+					_fire_grapple()
 	_update_focus()
 	_noise_t -= dt
 	if _noise_t <= 0.0:
@@ -654,6 +904,9 @@ func _process(dt: float) -> void:
 	hit_t = maxf(hit_t - dt, 0.0)
 	_update_tracers(dt)
 	_update_shells(dt)
+	_update_line(dt)
+	_slash_t = maxf(_slash_t - dt, 0.0)
+	_throw_t = maxf(_throw_t - dt, 0.0)
 	# Muzzle flash lifetime (frame-rate independent).
 	if _flash_t > 0.0:
 		_flash_t -= dt
@@ -661,7 +914,7 @@ func _process(dt: float) -> void:
 		if _flash_t <= 0.0:
 			_flash.visible = false
 			_flash_light.light_energy = 0.0
-	var aiming := drawn and (Input.is_action_pressed("aim") or Game.debug.has("aim")) and reloading <= 0.0 and player.enabled and not Game.tuning_open()
+	var aiming := drawn and bool(_cfg.get("ads", false)) and (Input.is_action_pressed("aim") or Game.debug.has("aim")) and reloading <= 0.0 and player.enabled and not Game.tuning_open()
 	player.aiming = aiming
 	ads = move_toward(ads, 1.0 if aiming else 0.0, dt * 7.5)
 	var ease_ads := ads * ads * (3.0 - 2.0 * ads)
@@ -692,9 +945,10 @@ func _process(dt: float) -> void:
 	var spd := player.get_horizontal_speed()
 	var sprinting := spd > 5.6 and not aiming and _since_shot > 0.35 and reloading <= 0.0
 	_sprint_pose = move_toward(_sprint_pose, 1.0 if sprinting else 0.0, dt * 5.0)
-	var hip := Vector3(0.19, -0.19, -0.42)
-	# Reticle on the camera axis: gun offset = -(sight centre) + eye relief.
-	var aim := -SIGHT_CENTER + Vector3(0, 0, -SIGHT_EYE_DIST)
+	var hip: Vector3 = _cfg.get("hip", Vector3(0.19, -0.19, -0.42))
+	# Sight on the camera axis: gun offset = -(sight point) + eye relief.
+	var sight_pt: Vector3 = _cfg.get("sight", SIGHT_CENTER)
+	var aim := -sight_pt + Vector3(0, 0, -float(_cfg.get("eye", SIGHT_EYE_DIST)))
 	var pos := hip.lerp(aim, ease_ads)
 	var bob_amt := clampf(spd / 7.0, 0.0, 1.0) * (1.0 - ease_ads * 0.85) * (1.0 if player.is_on_floor() else 0.0)
 	var bob := Vector3(sin(t * 7.2) * 0.008, -absf(sin(t * 7.2)) * 0.012, 0) * bob_amt
@@ -708,9 +962,21 @@ func _process(dt: float) -> void:
 	# Reload choreography: tilt, drop mag, insert, slap.
 	var rel := Vector3.ZERO
 	var rel_rot := Vector3.ZERO
-	_mag.position = Vector3(0, -0.11, 0.12)
-	_mag.visible = true
-	if reloading > 0.0:
+	if _mag:
+		_mag.position = _cfg.get("mag_rest", Vector3(0, -0.11, 0.12))
+		_mag.visible = true
+	if _slash_t > 0.0:
+		# Knife: a fast diagonal cut from upper right to lower left.
+		var ks := 1.0 - _slash_t / 0.32
+		var cs := sin(clampf(ks * 1.25, 0.0, 1.0) * PI)
+		rel += Vector3(-0.14, 0.03, -0.12) * cs
+		rel_rot += Vector3(-0.7, 0.9, 1.4) * cs
+	if _throw_t > 0.0:
+		var kt := 1.0 - _throw_t / 0.35
+		var ct := sin(kt * PI)
+		rel += Vector3(-0.05, 0.12, 0.08) * ct
+		rel_rot += Vector3(1.2, 0.0, 0.3) * ct
+	if reloading > 0.0 and _mag:
 		var T := float(weapon.reload_time)
 		var k := 1.0 - reloading / T
 		var tilt := smoothstep(0.0, 0.18, k) * (1.0 - smoothstep(0.82, 1.0, k))
@@ -729,21 +995,30 @@ func _process(dt: float) -> void:
 	var strafe := player.get_global_transform().basis.inverse() * player.velocity
 	_vm_gun.position = pos + bob + breathe + draw_off + rel + sprint_off + wall_off + _kp + Vector3(_sway.x, _sway.y, 0) * 0.5
 	_vm_gun.rotation = _kr + rel_rot + sprint_rot + wall_rot + Vector3(_sway.y * 2.0, _sway.x * 2.5, clampf(-strafe.x * 0.012, -0.06, 0.06) + _sway.x * 1.5)
-	_selector.rotation.x = -1.2 if auto_mode else 0.0
+	if _selector:
+		_selector.rotation.x = -1.2 if auto_mode else 0.0
 	var ammo := free_ammo
 	if mission_on():
 		ammo = int(Game.mstate().get("ammo", 0))
-	_ammo_label.text = "%02d" % ammo
-	_ammo_label.modulate = Color("#9FE8A8") if ammo > 6 else Color("#E8A25A")
+	if _ammo_label:
+		_ammo_label.text = "%02d" % ammo
+		_ammo_label.modulate = Color("#9FE8A8") if ammo > 6 else Color("#E8A25A")
+	if _cfg.has("sheath"):
+		(_cfg.sheath as Node3D).visible = ammo > 0
+	if _cfg.has("hook"):
+		(_cfg.hook as Node3D).visible = _hook_t < 0.0 and not player.is_grappling()
+
+## Spend one round of the drawn weapon (mission ammo or free play).
+func _take_round() -> bool:
+	if mission_on():
+		return Game.sim.try_fire()
+	if free_ammo > 0:
+		free_ammo -= 1
+		return true
+	return false
 
 func _fire() -> void:
-	var ok := false
-	if mission_on():
-		ok = Game.sim.try_fire()
-	else:
-		ok = free_ammo > 0
-		if ok:
-			free_ammo -= 1
+	var ok := _take_round()
 	if not ok:
 		Game.play_2d("dry", -2)
 		cooldown = 0.25
@@ -770,6 +1045,8 @@ func _fire() -> void:
 		var col: Object = hit.collider
 		if col is Npc:
 			var npc := col as Npc
+			npc.set_meta("knock", 18.0 if weapon.get("suppressed", false) else 30.0)
+			npc.set_meta("knock_how", "die")
 			var head: bool = hit.position.y > npc.global_position.y + 1.48
 			var dmg: float = Game.sim.weapon_damage(weapon_id, from.distance_to(hit.position), head)
 			var was_alive := npc.alive
@@ -793,20 +1070,24 @@ func _fire() -> void:
 				Game.play_3d("whiz", hit.position, -14, 3.0, randf_range(1.3, 1.7))
 		if col is RigidBody3D:
 			(col as RigidBody3D).apply_impulse(dir * 6.0, hit.position - (col as RigidBody3D).global_position)
-	tracer(muzzle, end)
-	# Sound: the report, a touch of variation, louder when not suppressed by ADS breathing.
-	Game.play_2d("shot", 0, randf_range(0.94, 1.06))
-	# Flash.
-	_flash.visible = true
+	var sup: bool = weapon.get("suppressed", false)
+	if not sup:
+		tracer(muzzle, end)
+	# Sound: the report, or the suppressor's cough.
+	Game.play_2d("silenced" if sup else "shot", -2 if sup else 0, randf_range(0.94, 1.06))
+	# Flash (a suppressor leaves only a faint spark).
+	var fsc := float(_cfg.get("flash_scale", 1.0))
+	_flash.visible = fsc > 0.0
 	_flash.rotation = Vector3(0, 0, randf() * TAU)
-	var fs := randf_range(0.8, 1.3)
-	_flash.scale = Vector3(fs, fs, randf_range(0.8, 1.5))
+	var fs := randf_range(0.8, 1.3) * fsc
+	_flash.scale = Vector3(fs, fs, randf_range(0.8, 1.5) * fsc)
 	_flash_t = 0.05
-	_flash_light.light_energy = 7.0
-	_burst("smoke", muzzle, dir + Vector3.UP * 0.3)
+	_flash_light.light_energy = 7.0 * fsc
+	if not sup or randf() < 0.4:
+		_burst("smoke", muzzle, dir + Vector3.UP * 0.3)
 	_eject_shell()
 	# Kick: view model, camera punch, shake, FOV, permanent climb.
-	var ak := 1.0 - ads * 0.55
+	var ak := (1.0 - ads * 0.55) * (0.7 if sup else 1.0)
 	_kpv += Vector3(randf_range(-0.05, 0.05), 0.12, 1.1) * ak
 	_krv += Vector3(3.2, randf_range(-0.8, 0.8), randf_range(-1.6, 1.6)) * ak
 	_punch_v += Vector3(0.9 * ak + 0.25, randf_range(-0.25, 0.25), randf_range(-0.5, 0.5) * ak)
@@ -858,6 +1139,8 @@ func _takedown() -> void:
 	if takedown_target == null:
 		return
 	var npc := takedown_target
+	npc.set_meta("knock", 6.0)
+	npc.set_meta("knock_how", "limp")
 	npc.take_down()
 	Game.play_3d("thud", npc.global_position, -2)
 	if level and level.has_method("on_npc_killed"):
@@ -994,3 +1277,218 @@ func incoming_shot(from: Vector3, to: Vector3, hit: bool, dmg: float) -> void:
 			_trauma = minf(_trauma + 0.15, 1.0)
 		Game.play_3d("impact", to, -8, 3.0, randf_range(1.0, 1.3))
 		_burst("dust", to, (from - to).normalized())
+
+# ------------------------------------------------------------- knife
+
+## Slash: one cut in front. Unaware targets (from behind) die outright.
+func _slash() -> void:
+	cooldown = float(weapon.get("fire_interval", 0.5))
+	_slash_t = 0.32
+	_krv += Vector3(-1.5, 2.0, 3.0)
+	Game.play_2d("swish", -4, randf_range(0.9, 1.15))
+	var reach := float(weapon.get("reach", 2.3))
+	var dir := player.get_look_dir()
+	var flat := Vector3(dir.x, 0, dir.z).normalized()
+	var best: Npc = null
+	var best_d := reach
+	for n in get_tree().get_nodes_in_group("npc"):
+		var npc := n as Npc
+		if npc == null or not npc.alive:
+			continue
+		var to := npc.global_position - player.global_position
+		var d := Vector2(to.x, to.z).length()
+		if d < best_d and absf(to.y) < 1.5 and Vector3(to.x, 0, to.z).normalized().dot(flat) > 0.55:
+			best = npc
+			best_d = d
+	if best == null:
+		get_tree().call_group("npc", "hear_noise", player.global_position, float(weapon.get("noise_radius", 2.0)))
+		return
+	var silent_kill := best.can_takedown(player.global_position)
+	var dmg: float = 9999.0 if silent_kill else float(weapon.get("damage", 70.0))
+	best.set_meta("knock", 12.0)
+	best.set_meta("knock_how", "die")
+	var killed := best.apply_damage(dmg, player.global_position, false)
+	var at := best.global_position + Vector3(0, 1.2, 0)
+	_burst("mist", at, -flat + Vector3.UP * 0.3)
+	Game.play_3d("stab", at, 0)
+	hit_t = 0.28 if killed else 0.16
+	hit_kill = killed
+	hit_head = false
+	Game.play_2d("hitmark", -2 if killed else -6, 0.8 if killed else 1.0)
+	_trauma = minf(_trauma + 0.15, 0.6)
+	if killed and level and level.has_method("on_npc_killed"):
+		level.on_npc_killed(best)
+	get_tree().call_group("npc", "hear_noise", player.global_position, float(weapon.get("noise_radius", 2.0)))
+
+static func _knife_mesh() -> Mesh:
+	return Builder.cached("throw_knife", func():
+		var b := Builder.new(0.0)
+		b.box(P.CHARCOAL, Vector3(0, 0, -0.08), Vector3(0.006, 0.03, 0.16), false)
+		b.box(P.CHROME, Vector3(0, -0.014, -0.08), Vector3(0.007, 0.005, 0.16), false)
+		b.box(P.LEATHER, Vector3(0, 0, 0.05), Vector3(0.012, 0.024, 0.1), false)
+		return b.mesh())
+
+## Throw one of the spare blades. It flies with gravity, sticks where it
+## lands and can be picked back up by walking over it.
+func _throw_knife() -> void:
+	if _throw_t > 0.0 or _slash_t > 0.0:
+		return
+	if not _take_round():
+		Game.play_2d("dry", -6)
+		return
+	_throw_t = 0.35
+	Game.play_2d("swish", -2, 1.3)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _knife_mesh()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	get_tree().current_scene.add_child(mi)
+	var dir := player.get_look_dir()
+	mi.global_position = cam.global_position + dir * 0.4 + cam.global_basis.x * 0.12
+	mi.global_basis = Basis.looking_at(dir, Vector3.UP)
+	_knives.append({"node": mi, "vel": dir * 30.0 + Vector3.UP * 1.2, "stuck": false, "id": weapon_id, "age": 0.0})
+	while _knives.size() > 12:
+		var old: Dictionary = _knives.pop_front()
+		if is_instance_valid(old.node):
+			old.node.queue_free()
+
+func _update_knives(dt: float) -> void:
+	var space := player.get_world_3d().direct_space_state
+	for k in _knives.duplicate():
+		var node: Node3D = k.node
+		if not is_instance_valid(node):
+			_knives.erase(k)
+			continue
+		k.age += dt
+		if k.stuck:
+			# Pick-up: walk over it.
+			if k.age > 0.5 and node.global_position.distance_to(player.global_position + Vector3(0, 0.6, 0)) < 1.6:
+				if mission_on():
+					Game.sim.add_ammo(k.id, 1)
+				elif k.id == weapon_id:
+					free_ammo += 1
+				else:
+					_free[k.id] = int(_free.get(k.id, 0)) + 1
+				Game.play_2d("beep", -10, 1.4)
+				node.queue_free()
+				_knives.erase(k)
+			continue
+		var v: Vector3 = k.vel
+		v.y -= 9.8 * dt
+		k.vel = v
+		var from := node.global_position
+		var to := from + v * dt
+		var q := PhysicsRayQueryParameters3D.create(from, to, MASK_SHOT, [player.get_rid()])
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			node.global_position = to
+			node.rotate_object_local(Vector3.RIGHT, -dt * 22.0)
+			if k.age > 4.0:
+				node.queue_free()
+				_knives.erase(k)
+			continue
+		k.stuck = true
+		k.age = 0.0
+		var col: Object = hit.collider
+		if col is Npc:
+			var npc := col as Npc
+			var head: bool = hit.position.y > npc.global_position.y + 1.48
+			npc.set_meta("knock", 14.0)
+			npc.set_meta("knock_how", "die")
+			var was_alive := npc.alive
+			var killed := npc.apply_damage(Game.sim.weapon_damage(k.id, from.distance_to(player.global_position), head), player.global_position, head)
+			Game.play_3d("stab", hit.position, 0)
+			_burst("mist", hit.position, -v.normalized())
+			if was_alive:
+				hit_t = 0.28 if killed else 0.16
+				hit_kill = killed
+				hit_head = head
+				Game.play_2d("hitmark", -2 if killed else -6)
+			if killed and level and level.has_method("on_npc_killed"):
+				level.on_npc_killed(npc)
+			# Drop at their feet to be recovered.
+			node.global_position = Vector3(hit.position.x, npc.global_position.y + 0.05, hit.position.z)
+			node.global_basis = Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, -PI / 2)
+		else:
+			node.global_position = hit.position - v.normalized() * 0.06
+			node.global_basis = Basis.looking_at(v.normalized(), Vector3.UP if absf(v.normalized().y) < 0.95 else Vector3.RIGHT)
+			Game.play_3d("impact", hit.position, -8, 3.0, 1.6)
+			_burst("sparks", hit.position, hit.normal)
+		get_tree().call_group("npc", "hear_noise", node.global_position, 4.0)
+
+# ------------------------------------------------------------- grapple line
+
+## Fire the hook at whatever world surface is under the crosshair. While
+## pulling, LMB or RMB lets go; so does jumping.
+func _fire_grapple() -> void:
+	cooldown = 0.35
+	if player.is_grappling() or _hook_t >= 0.0:
+		_release_line()
+		return
+	var dir := player.get_look_dir()
+	var from := cam.global_position
+	var rng := float(weapon.get("range", 38.0))
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * rng, 1, [player.get_rid()])
+	var hit := player.get_world_3d().direct_space_state.intersect_ray(q)
+	_hook_from = _flash.global_position
+	_hook_hit = not hit.is_empty()
+	_hook_to = hit.position if _hook_hit else from + dir * rng
+	_hook_dur = maxf(_hook_from.distance_to(_hook_to) / HOOK_SPEED, 0.05)
+	_hook_t = 0.0
+	_hook.visible = true
+	_rope.visible = true
+	Game.play_2d("grapple", -3)
+	_krv += Vector3(2.5, 0, 0)
+	_trauma = minf(_trauma + 0.1, 0.4)
+
+func _release_line() -> void:
+	if player and player.is_grappling():
+		player.stop_grapple()
+	_hook_t = -1.0
+	if _hook:
+		_hook.visible = false
+	if _rope:
+		_rope.visible = false
+	if _winch and _winch.playing:
+		_winch.stop()
+
+func _update_line(dt: float) -> void:
+	if _rope == null or not _rope.is_inside_tree():
+		return
+	var hand := _flash.global_position if _kind() == "grapple" else player.global_position + Vector3(0, 1.2, 0)
+	if _hook_t >= 0.0:
+		_hook_t += dt
+		var k := clampf(_hook_t / _hook_dur, 0.0, 1.0)
+		var at := _hook_from.lerp(_hook_to, k)
+		_hook.global_position = at
+		var d := (_hook_to - _hook_from).normalized()
+		if d.length() > 0.1:
+			_hook.global_basis = Basis.looking_at(d, Vector3.UP if absf(d.y) < 0.95 else Vector3.RIGHT)
+		_draw_rope(hand, at)
+		if k >= 1.0:
+			_hook_t = -1.0
+			if _hook_hit:
+				if Game.debug.has("fire"):
+					print("grapple anchor ", _hook_to)
+				player.start_grapple(_hook_to)
+				Game.play_3d("impact", _hook_to, -4, 4.0, 1.4)
+				_winch.play()
+			else:
+				_release_line()
+		return
+	if player.is_grappling():
+		_draw_rope(hand, _hook.global_position)
+	elif _rope.visible:
+		if Game.debug.has("fire"):
+			print("grapple released at ", player.global_position)
+		_release_line()
+
+func _draw_rope(a: Vector3, b: Vector3) -> void:
+	var len := a.distance_to(b)
+	if len < 0.05:
+		_rope.visible = false
+		return
+	_rope.visible = true
+	var up := Vector3.UP if absf((b - a).normalized().y) < 0.95 else Vector3.RIGHT
+	var bas := Basis.looking_at(b - a, up)
+	bas.z *= len
+	_rope.global_transform = Transform3D(bas, (a + b) * 0.5)

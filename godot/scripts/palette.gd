@@ -8,6 +8,7 @@ enum {
 	BEIGE, WARM_GREY, CRT, AMBER, TEAL, PETROL, TERRACOTTA,
 	FOLIAGE, GLASS, WATER, WINDOWS, BANNER, LAMP, SKIN, GUARD, ROBE, BLACK, CHROME, TYRE,
 	CAR_PAINT, CAR_ORANGE, CAR_GLASS, PLUSH, DASH_DARK,
+	ARMOR, TUNIC, CARBON, CAPE,
 	COUNT
 }
 
@@ -101,6 +102,12 @@ static func mats() -> Array[Material]:
 	# 80s burgundy velour and moulded plastic for the cabin.
 	_mats[PLUSH] = _kit("#5E2A33", 8, 0.92, 2.6)
 	_mats[DASH_DARK] = _kit("#1A1213", 0, 0.6)
+	# Guard kit (refs/Gemini_Generated_Image): brushed steel plate over a
+	# brown tunic; the elite wear black carbon armour and an ochre cape.
+	_mats[ARMOR] = _kit("#8F969A", 5, 0.32, 2.5, "#000000", 0.75)
+	_mats[TUNIC] = _kit("#6A4A34", 8, 0.92, 2.2)
+	_mats[CARBON] = _kit("#24272A", 5, 0.4, 6.0, "#000000", 0.45)
+	_mats[CAPE] = _kit("#BF7020", 8, 0.9, 2.0)
 	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE, ROAD, FOLIAGE, STEEL, CHARCOAL, CAR_PAINT, CAR_ORANGE]:
 		_ext_mats.append(_mats[i])
 		_mats[i].set_shader_parameter("exposed", 1.0)

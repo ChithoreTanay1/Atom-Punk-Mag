@@ -145,6 +145,37 @@ fn synth(name: &str) -> (Vec<f32>, bool) {
             let x = (tau() * f * t).sin();
             (x * 1.8).clamp(-1.0, 1.0) * 0.35
         }, 13), true),
+        // Suppressed pistol: a short filtered cough plus the slide's metal clack.
+        "silenced" => (render(0.3, |t, r| {
+            let cough = lp.run(noise(r), 0.25) * (-t * 38.0).exp() * 1.6;
+            let thump = (tau() * 140.0 * t).sin() * (-t * 30.0).exp() * 0.5;
+            let ct = t - 0.035;
+            let clack = if ct > 0.0 { (noise(r) * 0.6 + (tau() * 2900.0 * ct).sin() * 0.5) * (-ct * 160.0).exp() } else { 0.0 };
+            (cough + thump + clack).clamp(-1.0, 1.0) * 0.9
+        }, 30), false),
+        // Knife: an airy swish that sweeps up.
+        "swish" => (render(0.22, |t, r| {
+            let env = (t / 0.22 * std::f32::consts::PI).sin().powi(2);
+            let hp = noise(r) - lp.run(noise(r), 0.15 + t * 2.0);
+            hp * env * 0.55
+        }, 31), false),
+        // Knife into a body: wet thunk.
+        "stab" => (render(0.2, |t, r| {
+            (tau() * 90.0 * t).sin() * (-t * 22.0).exp() * 0.8 + lp.run(noise(r), 0.12) * (-t * 26.0).exp() * 0.9
+        }, 32), false),
+        // Grapple: pneumatic pop, then the line zipping off the spool.
+        "grapple" => (render(0.55, |t, r| {
+            let pop = lp.run(noise(r), 0.4) * (-t * 45.0).exp() * 1.2;
+            let zip = (tau() * (900.0 + 1800.0 * t) * t).sin().signum() * 0.08 * (-(t - 0.05).abs() * 5.0).exp() * (t > 0.03) as i32 as f32;
+            let rattle = noise(r) * 0.15 * ((t * 70.0).fract() < 0.3) as i32 as f32 * (-t * 4.0).exp();
+            (pop + zip + rattle).clamp(-1.0, 1.0)
+        }, 33), false),
+        // Winch reeling in: geared whine with ratchet clicks.
+        "winch" => (render(0.8, |t, r| {
+            let whine = (tau() * 240.0 * t + (tau() * 9.0 * t).sin()).sin() * 0.18;
+            let click = noise(r) * (-((t * 22.0).fract()) * 60.0).exp() * 0.4;
+            whine + click
+        }, 34), true),
         "beep" => (render(0.09, |t, _| (tau() * 1320.0 * t).sin() * 0.35 * (1.0 - (-t * 200.0).exp()) * (-t * 18.0).exp(), 14), false),
         "beep_low" => (render(0.14, |t, _| (tau() * 660.0 * t).sin() * 0.35 * (-t * 14.0).exp(), 15), false),
         "pour" => (render(1.2, |t, r| {
@@ -212,6 +243,7 @@ impl SfxBank {
         [
             "shot", "shell", "hitmark", "whiz", "impact", "shot_far", "dry", "reload", "step", "land", "hit", "flesh", "thud", "static", "tape",
             "telex", "alarm", "beep", "beep_low", "pour", "throw", "door", "ambience", "rain", "wind",
+            "silenced", "swish", "stab", "grapple", "winch",
         ]
         .iter()
         .map(|x| GString::from(*x))

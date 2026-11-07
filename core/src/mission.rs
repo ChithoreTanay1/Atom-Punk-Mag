@@ -61,6 +61,11 @@ pub struct Mission {
     pub ammo_mag: u32,
     pub ammo_reserve: u32,
     pub mag_size: u32,
+    /// Weapons carried, in slot order; the first is drawn at the start.
+    pub weapons: Vec<String>,
+    pub current_weapon: String,
+    /// Ammo of the weapons not in hand: id -> (mag, reserve, mag_size).
+    pub stash: std::collections::BTreeMap<String, (u32, u32, u32)>,
     pub gadgets: Vec<GadgetStock>,
     pub kills: u32,
     pub bodies_found: u32,
@@ -79,6 +84,14 @@ impl Mission {
             .filter_map(|g| content.gadget(g))
             .map(|g| GadgetStock { id: g.id.clone(), kind: g.kind, count: g.count })
             .collect();
+        let mut weapons = vec![def.loadout_weapon.clone()];
+        let mut stash = std::collections::BTreeMap::new();
+        for w in &def.loadout_extra {
+            if let Some(wd) = content.weapon(w) {
+                weapons.push(wd.id.clone());
+                stash.insert(wd.id.clone(), (wd.mag_size, wd.reserve, wd.mag_size));
+            }
+        }
         let extra_guards = ((target_paranoia / 25.0).floor() * def.guards_per_paranoia).max(0.0) as u32;
         Some(Self {
             clock: def.start_minute,
@@ -99,6 +112,9 @@ impl Mission {
             ammo_mag: weapon.mag_size,
             ammo_reserve: weapon.reserve,
             mag_size: weapon.mag_size,
+            current_weapon: weapon.id.clone(),
+            weapons,
+            stash,
             gadgets,
             kills: 0,
             bodies_found: 0,
@@ -309,6 +325,33 @@ impl Mission {
         if self.ammo_mag > 0 { self.ammo_mag -= 1; true } else { false }
     }
 
+    /// Put the weapon in hand away and draw `id`. Ammo is kept per weapon.
+    pub fn switch_weapon(&mut self, id: &str) -> bool {
+        if id == self.current_weapon { return true; }
+        let Some(next) = self.stash.remove(id) else { return false };
+        let cur = std::mem::replace(&mut self.current_weapon, id.to_string());
+        self.stash.insert(cur, (self.ammo_mag, self.ammo_reserve, self.mag_size));
+        self.ammo_mag = next.0;
+        self.ammo_reserve = next.1;
+        self.mag_size = next.2;
+        true
+    }
+
+    /// Return rounds (a recovered throwing knife) to a weapon's reserve.
+    pub fn add_ammo(&mut self, id: &str, n: u32) {
+        if id == self.current_weapon {
+            let room = self.mag_size.saturating_sub(self.ammo_mag);
+            let into_mag = room.min(n);
+            self.ammo_mag += into_mag;
+            self.ammo_reserve += n - into_mag;
+        } else if let Some(s) = self.stash.get_mut(id) {
+            let room = s.2.saturating_sub(s.0);
+            let into_mag = room.min(n);
+            s.0 += into_mag;
+            s.1 += n - into_mag;
+        }
+    }
+
     pub fn reload(&mut self) -> bool {
         let need = self.mag_size - self.ammo_mag;
         if need == 0 || self.ammo_reserve == 0 { return false; }
@@ -424,5 +467,28 @@ mod tests {
         assert!(!m.try_fire());
         assert!(m.reload());
         assert_eq!(m.ammo_mag, mag);
+    }
+
+    #[test]
+    fn weapon_switch_keeps_ammo() {
+        let c = content();
+        let mut m = first_mission(&c);
+        assert!(m.weapons.len() >= 4);
+        let primary = m.current_weapon.clone();
+        assert!(m.try_fire());
+        let left = m.ammo_mag;
+        let pistol = m.weapons[1].clone();
+        assert!(m.switch_weapon(&pistol));
+        assert!(m.try_fire());
+        assert!(m.switch_weapon(&primary));
+        assert_eq!(m.ammo_mag, left);
+        assert!(!m.switch_weapon("nope"));
+        // Throwing knives come back.
+        let knife = m.weapons[2].clone();
+        m.switch_weapon(&knife);
+        let k = m.ammo_mag;
+        assert!(m.try_fire());
+        m.add_ammo(&knife, 1);
+        assert_eq!(m.ammo_mag, k);
     }
 }

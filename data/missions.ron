@@ -16,6 +16,7 @@
         poison_delay: 14.0,
         guards_per_paranoia: 1.0,
         loadout_weapon: "wpn_carbine_vajra",
+        loadout_extra: ["wpn_pistol_mriga", "wpn_knife_nakha", "wpn_grapple_garuda"],
         loadout_gadgets: ["gdg_tape_bug", "gdg_static_lure", "gdg_datura_ampoule", "gdg_forged_dispatch"],
         schedule: [
             (at: 1070.0, activity: Work, location: "desk", lines: ["w1", "w2", "w3", "w4"]),

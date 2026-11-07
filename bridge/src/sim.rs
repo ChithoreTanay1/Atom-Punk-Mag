@@ -173,6 +173,12 @@ impl GameSim {
             "recoil_pitch_deg" => w.recoil_pitch_deg, "recoil_yaw_deg" => w.recoil_yaw_deg,
             "noise_radius" => w.noise_radius,
             "has_auto" => w.modes.contains(&magadha_core::content::FireMode::Auto),
+            "kind" => match w.kind {
+                magadha_core::content::WeaponKind::Gun => "gun",
+                magadha_core::content::WeaponKind::Melee => "melee",
+                magadha_core::content::WeaponKind::Grapple => "grapple",
+            },
+            "suppressed" => w.suppressed, "reach" => w.reach, "reserve" => w.reserve as i64,
         }
     }
 
@@ -340,6 +346,7 @@ impl GameSim {
             "bio" => gov.2.as_str(),
             "governor_health" => m.def.governor_health, "guard_health" => m.def.guard_health,
             "extra_guards" => m.extra_guards as i64, "weapon" => m.def.loadout_weapon.as_str(),
+            "weapons" => &m.weapons.iter().map(|w| s(w)).collect::<PackedStringArray>(),
             "gadgets" => &m.def.loadout_gadgets.iter().map(|g| s(g)).collect::<PackedStringArray>(),
         }
     }
@@ -514,6 +521,17 @@ impl GameSim {
     #[func]
     fn try_fire(&mut self) -> bool {
         self.mission.as_mut().map(|m| m.try_fire()).unwrap_or(false)
+    }
+
+    /// Draw another carried weapon (ammo is kept per weapon).
+    #[func]
+    fn switch_weapon(&mut self, id: GString) -> bool {
+        self.mission.as_mut().map(|m| m.switch_weapon(&id.to_string())).unwrap_or(false)
+    }
+
+    #[func]
+    fn add_ammo(&mut self, id: GString, n: i64) {
+        if let Some(m) = &mut self.mission { m.add_ammo(&id.to_string(), n.max(0) as u32); }
     }
 
     #[func]

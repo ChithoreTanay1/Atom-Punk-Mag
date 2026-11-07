@@ -52,6 +52,8 @@ All of the following is ours; none of it is history.
 - **Provinces:** Saptavarta, Vatsabhumi March, Ujjayanta Reach, Dakshavana, Hiranyavaha Circle.
 - **Governors:** Virabhadra Kaushika (Saptavarta, the slice target), his successors Kumaradeva Pingala and Sudarshana Haritaki, Bhuvanesha Andhaka, Dandapani Mauli, Mahasena Tarkshya, Ugrasena Bhauma. Their loyalties, rivalries and biographies in `data/governors.ron` are invented.
 - **Gadgets and weapon:** Vajra Mk.VII carbine, Murmur Cassette tape bug, static lure, datura ampoule, forged dispatch (names, stats, behaviour). Datura as a poison has traditional precedent; the gadget is ours.
+- **Mriga 9, Nakha knife, Garuda Line:** the suppressed pistol, the knife with throwing blades and the grappling line are all invented, including their names and stats. *Mriga* (deer), *nakha* (claw) and *Garuda* (the eagle mount of Vishnu) are real Sanskrit words, used loosely.
+- **Guard dress:** steel plate over brown tunics for the line guards, and black carbon armour with ochre capes for the elite. The atompunk look comes from the user's reference image. It is not a historical Mauryan uniform.
 - **Mission:** the Saptavarta compound, the governor's evening routine, every spoken line, the intel items, and the telex-to-the-capital frame path.
 - **Rumors, agent operations and night events** in `data/rumors.ron`, `ops.ron` and `events.ron`. Their mechanics take inspiration from the *Arthashastra* (see below), but the texts are ours.
 - **Frame story texts:** "archive model 326-B" and its menu lines.

@@ -39,6 +39,24 @@ pub struct WeaponDef {
     pub recoil_yaw_deg: f32,
     pub noise_radius: f32,
     pub modes: Vec<FireMode>,
+    /// Gun (hitscan), Melee (knife: slash, and throws from the magazine),
+    /// Grapple (rope line that pulls the player to a surface).
+    #[serde(default)]
+    pub kind: WeaponKind,
+    /// Suppressed: quiet report, small flash, no tracer.
+    #[serde(default)]
+    pub suppressed: bool,
+    /// Melee reach (m) for knives; grapple reach is `range`.
+    #[serde(default)]
+    pub reach: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum WeaponKind {
+    #[default]
+    Gun,
+    Melee,
+    Grapple,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -171,6 +189,9 @@ pub struct MissionDef {
     /// Extra guards spawned per 25 points of governor paranoia.
     pub guards_per_paranoia: f32,
     pub loadout_weapon: String,
+    /// Further weapons carried (sidearm, knives, grapple). Slots follow order.
+    #[serde(default)]
+    pub loadout_extra: Vec<String>,
     pub loadout_gadgets: Vec<String>,
 }
 
@@ -347,6 +368,9 @@ impl Content {
         }
         for m in &self.missions {
             if self.weapon(&m.loadout_weapon).is_none() { return err(format!("mission {} weapon missing", m.id)); }
+            for w in &m.loadout_extra {
+                if self.weapon(w).is_none() { return err(format!("mission {} weapon {} missing", m.id, w)); }
+            }
             for g in &m.loadout_gadgets {
                 if self.gadget(g).is_none() { return err(format!("mission {} gadget {g} missing", m.id)); }
             }
@@ -410,6 +434,7 @@ mod tests {
             falloff_start: 20.0, falloff_min: 0.5, rpm: 600.0, mag_size: 20, reserve: 60,
             reload_time: 2.0, spread_deg: 1.0, ads_spread_deg: 0.2, recoil_pitch_deg: 1.0,
             recoil_yaw_deg: 0.3, noise_radius: 40.0, modes: vec![FireMode::Semi],
+            kind: WeaponKind::Gun, suppressed: false, reach: 0.0,
         };
         assert_eq!(w.damage_at(10.0, false), 40.0);
         assert_eq!(w.damage_at(100.0, false), 20.0);

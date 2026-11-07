@@ -62,7 +62,14 @@ ASSETS.md         license and budget log for every asset
 2. Run Godot 4.7.2 with `--path godot`, or open `/godot` in the editor and press Play.
 3. Main menu: **New campaign** (war room, then the field operation), **Free play: Saptavarta** (the mission alone), **Feel test** (track and test room, milestone 1).
 
-Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png --frames=150 --pos=x,y,z --yaw=deg --pitch=deg [--dusk=0..1] [--draw=1] [--quality=0..2]` saves a frame and prints FPS, draw calls and primitives.
+Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png --frames=150 --pos=x,y,z --yaw=deg --pitch=deg [--dusk=0..1] [--draw=1] [--quality=0..2]` saves a frame and prints FPS, draw calls and primitives. `--weapon=1..4` picks the starting slot. `--ragdoll=1 [--ragdoll_role=guard] [--ragdoll_tint=0|1] [--ragdoll_dist=m] [--ragdoll_wait=s]` stands you in front of an NPC and kills it to show the death ragdoll.
+
+## Ragdolls, weapons and cars
+
+- **Death ragdolls** use the [Active Ragdoll](https://godotengine.org/asset-library/asset/5575) addon (MIT, in `godot/addons/active_ragdoll`; this is the one third-party code dependency, added on request). Living NPCs keep the cheap five-pivot animation from `npc.rs`. On death, `RagdollCorpse` (`scripts/ragdoll_corpse.gd`) builds a humanoid Skeleton3D, hangs the same body parts on it, and knocks it along the killing blow: a bullet, knife, takedown or car. Corpses sleep once settled, and only 10 stay physical at a time.
+- **Guards** wear the armour from the Gemini reference (`scripts/body_kit.gd`). Gate and yard guards wear steel plate: a kettle helmet with cheek guards, breastplate, pauldrons, vambraces, greaves, a brown tunic and a belt. The inner posts are elite guards in black carbon armour with a closed helmet, an ochre cape and a scarf.
+- **Weapons** are data in `data/weapons.ron` (`kind: Gun | Melee | Grapple`, `suppressed`, `reach`). Missions list their extras in `loadout_extra`, and the core keeps ammo per weapon (`Mission::switch_weapon`).
+- **Cars:** every car in Saptavarta is a drivable Kestrel 80 in its own paint. This includes the governor's black car, which you can steal before it leaves. Driverless cars are put to sleep in the physics engine once at rest, and their interiors are culled beyond 30 m.
 
 ## Controls
 
@@ -71,6 +78,9 @@ Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png 
 | Move / jump / sprint / crouch (slide while sprinting) | WASD / Space / Shift / Ctrl or C |
 | Interact, enter or leave a car | E |
 | Fire / aim / reload / holster / fire mode | LMB / RMB / R / X / B |
+| Weapon slots: carbine, silenced pistol, knife, grapple line | 1 / 2 / 3 / 4, or the mouse wheel |
+| Knife: slash (kills outright from behind) / throw a blade | LMB / RMB (walk over thrown blades to pick them up) |
+| Grapple line: fire at a surface, let go | LMB / LMB again, RMB or Space |
 | Use gadget / next gadget | G or MMB / Q |
 | Takedown (from behind, unseen) | F |
 | Notebook (dossier, intel, objectives) | Tab |

@@ -467,7 +467,18 @@ func _process(dt: float) -> void:
 	else:
 		ammo_txt = "%02d/--" % rig.free_ammo
 	var wname: String = rig.weapon.get("name", "")
-	lines.append("%s %s %s  %s" % [wname, "AUTO" if rig.auto_mode else "SEMI", ammo_txt, "DRAWN" if rig.drawn else "holstered (X)"])
+	var kind := str(rig.weapon.get("kind", "gun"))
+	if kind == "gun":
+		lines.append("%s %s %s  %s" % [wname, "AUTO" if rig.auto_mode else "SEMI", ammo_txt, "DRAWN" if rig.drawn else "holstered (X)"])
+	elif kind == "melee":
+		lines.append("%s  throwing x%s (RMB)  %s" % [wname, ammo_txt.get_slice("/", 0), "DRAWN" if rig.drawn else "holstered (X)"])
+	else:
+		lines.append("%s  LMB fire / again to let go  %s" % [wname, "DRAWN" if rig.drawn else "holstered (X)"])
+	var strip := []
+	for i in rig.loadout.size():
+		var nm := str(rig.loadout[i].def.get("short", rig.loadout[i].def.get("name", "?")))
+		strip.append(("[%d %s]" if i == rig.slot else " %d %s ") % [i + 1, nm])
+	lines.append("".join(strip))
 	if not g.is_empty():
 		lines.append("GADGET [Q] %s x%d  (G)" % [g.name, int(g.count)])
 	_status.text = "\n".join(lines)

@@ -64,8 +64,11 @@ func _ready() -> void:
 	_light.light_energy = 0.0
 	_light.light_color = Color(1.0, 0.75, 0.55)
 	_light.shadow_enabled = false
+	_light.visible = false
 	add_child(_light)
 	set_process(false)
+	# Every street car carries an interior; past 30 m it is not worth a draw.
+	_cull_far(self)
 
 # ------------------------------------------------------------------ build
 
@@ -269,9 +272,16 @@ func _label(t: String, pos: Vector3, px: float, col: Color, size: int, parent: N
 
 # ------------------------------------------------------------------ runtime
 
+func _cull_far(n: Node) -> void:
+	for c in n.get_children():
+		if c is GeometryInstance3D:
+			(c as GeometryInstance3D).visibility_range_end = 30.0
+		_cull_far(c)
+
 func activate(on: bool) -> void:
 	active = on
 	set_process(on)
+	_light.visible = on
 	_light.light_energy = 0.35 if on else 0.0
 	if on:
 		_head_yaw = 0.0

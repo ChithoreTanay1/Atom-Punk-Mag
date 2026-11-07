@@ -337,80 +337,9 @@ static func wire_coil() -> Mesh:
 
 ## Builds a humanoid with pivots the Rust Npc animates:
 ## Visual/LegL, LegR, ArmL, ArmR. kind: guard, governor, courier, civilian.
+## Parts and outfits live in body_kit.gd (shared with the death ragdoll).
 static func humanoid(kind: String, tint := 0) -> Node3D:
-	var root := Node3D.new()
-	root.name = "Visual"
-	var cloth := P.GUARD
-	var lower := P.CHARCOAL
-	var accent := P.BURGUNDY
-	match kind:
-		"governor":
-			cloth = P.ROBE
-			lower = P.ROBE
-			accent = P.BRASS
-		"courier":
-			cloth = P.TERRACOTTA
-			lower = P.WARM_GREY
-			accent = P.CHARCOAL
-		"civilian":
-			cloth = [P.WARM_GREY, P.TEAL, P.IVORY, P.TERRACOTTA, P.PETROL][tint % 5]
-			lower = [P.CHARCOAL, P.WARM_GREY, P.PETROL][tint % 3]
-			accent = P.BEIGE
-	var body := MeshInstance3D.new()
-	body.mesh = cached("body_%s_%d" % [kind, tint], func():
-		var b := Builder.new(0.25)
-		if kind == "governor":
-			b.cyl(cloth, Vector3(0, 0.9, 0), 0.38, 0.27, 1.0, 10)
-			b.box(accent, Vector3(0, 1.38, -0.18), Vector3(0.12, 0.6, 0.04), false)
-		b.box(cloth, Vector3(0, 1.22, 0), Vector3(0.5, 0.62, 0.28), false)
-		b.box(accent, Vector3(0, 0.97, 0), Vector3(0.52, 0.1, 0.3), false)
-		b.box(P.SKIN, Vector3(0, 1.62, 0), Vector3(0.22, 0.26, 0.24), false)
-		if kind == "guard":
-			# Atompunk helmet with a dark visor and an amber lamp.
-			b.box(P.GUARD, Vector3(0, 1.72, 0.01), Vector3(0.28, 0.16, 0.3), false)
-			b.box(P.BLACK, Vector3(0, 1.64, -0.13), Vector3(0.24, 0.08, 0.04), false)
-			b.box(P.AMBER, Vector3(0.1, 1.76, -0.14), Vector3(0.04, 0.04, 0.03), false)
-			b.box(P.GUARD, Vector3(-0.31, 1.46, 0), Vector3(0.14, 0.12, 0.3), false)
-			b.box(P.GUARD, Vector3(0.31, 1.46, 0), Vector3(0.14, 0.12, 0.3), false)
-		elif kind == "governor":
-			b.cyl(P.IVORY, Vector3(0, 1.79, 0), 0.15, 0.13, 0.12, 10)
-			b.cyl(P.BRASS, Vector3(0, 1.74, 0), 0.155, 0.155, 0.03, 10)
-		else:
-			b.box(P.BLACK, Vector3(0, 1.74, 0.02), Vector3(0.23, 0.06, 0.25), false)
-		return b.mesh())
-	root.add_child(body)
-	for side in [-1, 1]:
-		var leg := Node3D.new()
-		leg.name = "LegL" if side < 0 else "LegR"
-		leg.position = Vector3(0.12 * side, 0.92, 0)
-		var lm := MeshInstance3D.new()
-		lm.mesh = cached("leg_%d" % lower, func():
-			var b := Builder.new(0.2)
-			b.box(lower, Vector3(0, -0.43, 0), Vector3(0.17, 0.86, 0.19), false)
-			b.box(P.BLACK, Vector3(0, -0.86, -0.04), Vector3(0.18, 0.1, 0.28), false)
-			return b.mesh())
-		leg.add_child(lm)
-		root.add_child(leg)
-		var arm := Node3D.new()
-		arm.name = "ArmL" if side < 0 else "ArmR"
-		arm.position = Vector3(0.32 * side, 1.48, 0)
-		var am := MeshInstance3D.new()
-		am.mesh = cached("arm_%d_%s" % [cloth, kind], func():
-			var b := Builder.new(0.2)
-			b.box(cloth, Vector3(0, -0.3, 0), Vector3(0.13, 0.6, 0.14), false)
-			b.box(P.SKIN, Vector3(0, -0.64, 0), Vector3(0.1, 0.1, 0.1), false)
-			if kind == "guard" and side > 0:
-				# Carbine held at the hip.
-				b.box(P.CHARCOAL, Vector3(0, -0.62, -0.3), Vector3(0.07, 0.12, 0.7), false)
-				b.box(P.BEIGE, Vector3(0, -0.56, -0.15), Vector3(0.08, 0.1, 0.3), false)
-			return b.mesh())
-		arm.add_child(am)
-		root.add_child(arm)
-	for c in root.get_children():
-		for m in ([c] + c.get_children()):
-			if m is GeometryInstance3D:
-				m.visibility_range_end = 95.0
-	return root
+	return BodyKit.living(kind, tint)
 
 static func make_npc(kind: String, pos: Vector3, tint := 0) -> Npc:
 	var n := Npc.new()
@@ -423,6 +352,7 @@ static func make_npc(kind: String, pos: Vector3, tint := 0) -> Npc:
 	shape.position = Vector3(0, 0.9, 0)
 	n.add_child(shape)
 	n.add_child(humanoid(kind, tint))
+	n.set_meta("tint", tint)
 	n.position = pos
 	return n
 
@@ -432,9 +362,27 @@ static func make_npc(kind: String, pos: Vector3, tint := 0) -> Npc:
 ## The drivable car: the Kestrel 80, a mid-engined wedge (INVENTED make;
 ## the shape is inspired by the 1968 Bertone Carabo concept). Body in car
 ## space: front is -Z, ground at y = -0.23, wheels at x +-0.8, z +-1.38.
+static var _paints := {}
+
+## Kestrel body paint in another colour: the CAR_PAINT surfaces get a
+## per-colour copy of the lacquer (shared between cars of that colour).
+static func paint_car(car: Node3D, paint: Color) -> void:
+	var mi := car.get_node_or_null("Body") as MeshInstance3D
+	if mi == null or mi.mesh == null:
+		return
+	var base: Material = P.mats()[P.CAR_PAINT]
+	if not _paints.has(paint):
+		var m := base.duplicate() as ShaderMaterial
+		m.set_shader_parameter("albedo", paint)
+		_paints[paint] = m
+	for i in mi.mesh.get_surface_count():
+		if mi.mesh.surface_get_material(i) == base:
+			mi.set_surface_override_material(i, _paints[paint])
+
 static func make_car(_body_slot := P.CAR_PAINT) -> ArcadeCar:
 	var car := ArcadeCar.new()
 	car.name = "Car"
+	car.add_to_group("cars")
 	var col := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
 	bs.size = Vector3(1.74, 0.5, 4.3)

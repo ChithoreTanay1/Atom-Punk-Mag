@@ -70,6 +70,8 @@ pub struct Npc {
     rng: Rng,
     phase: f32,
     death_t: f32,
+    last_hit_from: Vector3,
+    last_hit_head: bool,
     look_timer: f32,
     visual: Option<Gd<Node3D>>,
     limbs: [Option<Gd<Node3D>>; 4],
@@ -108,6 +110,8 @@ impl ICharacterBody3D for Npc {
             rng: Rng::new(1),
             phase: 0.0,
             death_t: 0.0,
+            last_hit_from: Vector3::ZERO,
+            last_hit_head: false,
             look_timer: 0.0,
             visual: None,
             limbs: [None, None, None, None],
@@ -284,6 +288,18 @@ impl Npc {
         behind || self.awareness.state != AlertState::Hostile
     }
 
+    /// Where the killing blow came from (world) and whether it was the head:
+    /// the ragdoll uses these for the direction of the knock.
+    #[func]
+    fn get_last_hit_from(&self) -> Vector3 {
+        self.last_hit_from
+    }
+
+    #[func]
+    fn get_last_hit_head(&self) -> bool {
+        self.last_hit_head
+    }
+
     #[func]
     fn take_down(&mut self) {
         self.die(true);
@@ -293,6 +309,8 @@ impl Npc {
     #[func]
     pub(crate) fn apply_damage(&mut self, amount: f32, from: Vector3, headshot: bool) -> bool {
         if !self.alive { return false; }
+        self.last_hit_from = from;
+        self.last_hit_head = headshot;
         self.health -= amount * if headshot { 1.0 } else { 1.0 };
         if self.health <= 0.0 {
             self.die(false);
