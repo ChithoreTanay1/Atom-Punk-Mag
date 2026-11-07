@@ -64,6 +64,8 @@ func _ready() -> void:
 		if a.begins_with("--") and a.contains("="):
 			var kv := a.substr(2).split("=", true, 1)
 			debug[kv[0]] = kv[1]
+	if debug.has("campaign"):  # play the province as tonight's campaign mission
+		sim.load_campaign(ProjectSettings.globalize_path(SAVE_PATH))
 	if debug.has("quality"):
 		settings.quality = int(debug.quality)
 	if debug.has("weather"):

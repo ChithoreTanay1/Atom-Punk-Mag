@@ -430,8 +430,12 @@ func message(text: String) -> void:
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.custom_minimum_size = Vector2(520, 0)
 	_feed.add_child(l)
+	# Drop the oldest lines. remove_child first: queue_free alone leaves the
+	# count unchanged until the frame ends, so a while loop never finished.
 	while _feed.get_child_count() > 6:
-		_feed.get_child(0).queue_free()
+		var old := _feed.get_child(0)
+		_feed.remove_child(old)
+		old.queue_free()
 	var tw := l.create_tween()
 	tw.tween_interval(6.0)
 	tw.tween_property(l, "modulate:a", 0.0, 1.5)

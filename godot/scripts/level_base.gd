@@ -211,6 +211,16 @@ func _debug_ragdoll() -> void:
 					rig._tether_to_aim()
 			_:
 				best.apply_damage(9999.0, from, mode == "head")
+		if Game.debug.has("exfil"):  # walk out after the kill to reach the debrief
+			await get_tree().create_timer(float(Game.debug.exfil)).timeout
+			player.global_position = Vector3(0, 1, 110)
+			if Game.debug.has("press"):  # then press the first debrief button
+				await get_tree().create_timer(3.0).timeout
+				print("pressing debrief button")
+				for b in get_tree().root.find_children("*", "Button", true, false):
+					if b.is_visible_in_tree() and b.text in ["Return to the war room", "Replay"]:
+						b.pressed.emit()
+						break
 
 ## Physical death: the NpcBody's own skeleton goes ragdoll (Active Ragdoll
 ## addon), knocked along the killing blow: bullet (by body part), knife,
