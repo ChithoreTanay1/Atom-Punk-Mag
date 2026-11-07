@@ -86,8 +86,14 @@ static func mats() -> Array[Material]:
 	_mats[BLACK] = _kit("#141618", 0, 0.5)
 	_mats[CHROME] = _kit("#B9C0C2", 0, 0.18, 1.0, "#000000", 0.9)
 	_mats[TYRE] = _kit("#1E2021", 0, 0.9)
-	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE, ROAD]:
+	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE, ROAD, FOLIAGE, STEEL, CHARCOAL]:
 		_ext_mats.append(_mats[i])
+		_mats[i].set_shader_parameter("exposed", 1.0)
+	for i in [CONCRETE, CONCRETE_DARK, CONCRETE_PALE]:
+		_mats[i].set_shader_parameter("grime", 1.0)
+	_mats[FOLIAGE].set_shader_parameter("wetness", 0.4)
+	_mats[STEEL].set_shader_parameter("wetness", 0.5)
+	_mats[CHARCOAL].set_shader_parameter("wetness", 0.5)
 	return _mats
 
 ## Dusk 0..1 drives window glow and lamps; rain drives wetness.
@@ -96,8 +102,6 @@ static func set_dusk(t: float) -> void:
 	window_mat.set_shader_parameter("emission_energy", lerpf(0.25, 2.4, t))
 	lamp_mat.set_shader_parameter("emission_energy", lerpf(1.0, 4.0, t))
 
+## Kept for older callers: weather now drives the global weather_wet.
 static func set_wetness(w: float) -> void:
-	mats()
-	for m in _ext_mats:
-		var base := 0.7 if m == _mats[ROAD] else 0.45
-		m.set_shader_parameter("wetness", base * w)
+	RenderingServer.global_shader_parameter_set("weather_wet", w)

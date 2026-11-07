@@ -1,4 +1,10 @@
 ; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
 
@@ -19,13 +25,6 @@ window/size/viewport_width=1600
 window/size/viewport_height=900
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-window/vsync/vsync_mode=1
-
-[physics]
-
-common/physics_ticks_per_second=120
-common/max_physics_steps_per_frame=8
-3d/physics_engine="Jolt Physics"
 
 [layer_names]
 
@@ -36,12 +35,32 @@ common/max_physics_steps_per_frame=8
 3d_physics/layer_5="interact"
 3d_physics/layer_6="zone"
 
+[physics]
+
+common/physics_ticks_per_second=120
+3d/physics_engine="Jolt Physics"
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-anti_aliasing/quality/msaa_3d=1
-occlusion_culling/use_occlusion_culling=true
 lights_and_shadows/directional_shadow/size=2048
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=1
+anti_aliasing/quality/msaa_3d=1
 environment/defaults/default_clear_color=Color(0.66, 0.69, 0.7, 1)
+occlusion_culling/use_occlusion_culling=true
+
+[shader_globals]
+
+weather_wet={
+"type": "float",
+"value": 0.0
+}
+weather_snow={
+"type": "float",
+"value": 0.0
+}
+weather_rain={
+"type": "float",
+"value": 0.0
+}

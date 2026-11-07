@@ -225,6 +225,114 @@ static func chair() -> Mesh:
 		b.cyl(P.CHROME, Vector3(0, 0.17, 0), 0.32, 0.05, 0.3, 10)
 		return b.mesh())
 
+static func bench() -> Mesh:
+	return cached("bench", func():
+		var b := Builder.new(0.25)
+		for x in [-0.8, 0.8]:
+			b.box(P.CHARCOAL, Vector3(x, 0.22, 0), Vector3(0.08, 0.44, 0.5), false)
+		for i in 3:
+			b.box(P.WALNUT, Vector3(0, 0.46, -0.16 + i * 0.16), Vector3(1.9, 0.05, 0.13), false)
+		for i in 2:
+			b.box(P.WALNUT, Vector3(0, 0.7 + i * 0.18, 0.27), Vector3(1.9, 0.12, 0.04), false)
+		return b.mesh())
+
+static func bin() -> Mesh:
+	return cached("bin", func():
+		var b := Builder.new(0.25)
+		b.cyl(P.CHARCOAL, Vector3(0, 0.45, 0), 0.26, 0.28, 0.9, 10)
+		b.cyl(P.STEEL, Vector3(0, 0.92, 0), 0.3, 0.3, 0.05, 10)
+		b.box(P.AMBER, Vector3(0, 0.7, 0.27), Vector3(0.12, 0.04, 0.02), false)
+		return b.mesh())
+
+## Cassette-age public phone: beige booth, charcoal hood, amber call lamp.
+static func phone_booth() -> Mesh:
+	return cached("phone", func():
+		var b := Builder.new(0.3)
+		b.box(P.CHARCOAL, Vector3(0, 1.2, -0.42), Vector3(1.0, 2.4, 0.08), false)
+		b.box(P.BEIGE, Vector3(0, 1.3, -0.33), Vector3(0.5, 0.7, 0.12), false)
+		b.box(P.BLACK, Vector3(0, 1.45, -0.26), Vector3(0.3, 0.16, 0.02), false)
+		b.box(P.CRT, Vector3(0, 1.45, -0.255), Vector3(0.24, 0.1, 0.01), false)
+		b.box(P.CHARCOAL, Vector3(-0.18, 1.18, -0.24), Vector3(0.08, 0.28, 0.08), false)
+		for x in [-0.5, 0.5]:
+			b.box(P.STEEL, Vector3(x, 1.2, 0), Vector3(0.05, 2.4, 0.9), false)
+		b.box(P.CHARCOAL, Vector3(0, 2.45, 0), Vector3(1.15, 0.12, 1.0), false)
+		b.box(P.AMBER, Vector3(0, 2.55, 0.0), Vector3(0.3, 0.08, 0.3), false)
+		return b.mesh())
+
+static func bollard() -> Mesh:
+	return cached("bollard", func():
+		var b := Builder.new(0.2)
+		b.cyl(P.CONCRETE_PALE, Vector3(0, 0.45, 0), 0.16, 0.13, 0.9, 8)
+		b.cyl(P.CHARCOAL, Vector3(0, 0.78, 0), 0.14, 0.14, 0.06, 8)
+		return b.mesh())
+
+static func kiosk() -> Mesh:
+	return cached("kiosk", func():
+		var b := Builder.new(0.3)
+		b.box(P.TEAL, Vector3(0, 1.1, 0), Vector3(2.2, 2.2, 1.6), false)
+		b.box(P.CHARCOAL, Vector3(0, 2.3, 0.2), Vector3(2.6, 0.12, 2.2), false)
+		b.box(P.WINDOWS, Vector3(0, 1.4, 0.81), Vector3(1.8, 0.8, 0.02), false)
+		b.box(P.IVORY, Vector3(-0.5, 0.75, 0.83), Vector3(0.6, 0.5, 0.02), false)
+		b.box(P.BURGUNDY, Vector3(0.4, 0.75, 0.83), Vector3(0.5, 0.5, 0.02), false)
+		b.box(P.BEIGE, Vector3(0, 2.6, 0.2), Vector3(1.6, 0.4, 0.1), false)
+		return b.mesh())
+
+static func ac_unit() -> Mesh:
+	return cached("ac", func():
+		var b := Builder.new(0.3)
+		b.box(P.BEIGE, Vector3(0, 0, 0), Vector3(0.9, 0.6, 0.55), false)
+		b.cyl_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0.12, 0, 0.28)), 0.22, 0.22, 0.02, 12)
+		for i in 4:
+			b.box(P.CHARCOAL, Vector3(-0.32, -0.18 + i * 0.12, 0.28), Vector3(0.18, 0.03, 0.02), false)
+		return b.mesh())
+
+static func water_tank() -> Mesh:
+	return cached("tank", func():
+		var b := Builder.new(0.3)
+		for x in [-0.9, 0.9]:
+			for z in [-0.9, 0.9]:
+				b.box(P.CHARCOAL, Vector3(x, 0.9, z), Vector3(0.12, 1.8, 0.12), false)
+		b.cyl(P.STEEL, Vector3(0, 2.9, 0), 1.3, 1.3, 2.2, 14)
+		b.cyl(P.CONCRETE_PALE, Vector3(0, 4.3, 0), 1.4, 0.2, 0.6, 14)
+		return b.mesh())
+
+static func antenna() -> Mesh:
+	return cached("antenna", func():
+		var b := Builder.new(0.1)
+		b.cyl(P.STEEL, Vector3(0, 3.0, 0), 0.06, 0.03, 6.0, 5)
+		for i in 4:
+			b.box(P.STEEL, Vector3(0, 2.5 + i * 0.9, 0), Vector3(1.6 - i * 0.3, 0.04, 0.04), false)
+		b.cyl(P.STEEL, Vector3(0.5, 4.2, 0), 0.5, 0.5, 0.06, 14)
+		b.cyl(P.AMBER, Vector3(0, 6.05, 0), 0.08, 0.08, 0.1, 6)
+		return b.mesh())
+
+static func hedge() -> Mesh:
+	return cached("hedge", func():
+		var b := Builder.new(0.35)
+		b.box(P.CONCRETE_PALE, Vector3(0, 0.2, 0), Vector3(4.0, 0.4, 0.9), false)
+		b.box(P.FOLIAGE, Vector3(0, 0.75, 0), Vector3(3.8, 0.7, 0.75), false)
+		return b.mesh())
+
+## "Cassette eye": wall-mounted camera on a bracket, amber tally lamp.
+static func wall_camera() -> Mesh:
+	return cached("wallcam", func():
+		var b := Builder.new(0.2)
+		b.box(P.CHARCOAL, Vector3(0, 0, 0.15), Vector3(0.06, 0.06, 0.3), false)
+		var t := Transform3D(Basis(Vector3.RIGHT, -0.35), Vector3(0, -0.06, 0.38))
+		b.box_xf(P.BEIGE, t, Vector3(0.18, 0.16, 0.36))
+		b.cyl_xf(P.BLACK, Transform3D(Basis(Vector3.RIGHT, PI / 2 - 0.35), Vector3(0, -0.13, 0.57)), 0.06, 0.06, 0.04, 10)
+		b.box(P.AMBER, Vector3(0.07, -0.0, 0.5), Vector3(0.025, 0.025, 0.025), false)
+		return b.mesh())
+
+## Coil of wire for wall tops (rings of thin cylinders), 4 m long.
+static func wire_coil() -> Mesh:
+	return cached("wire", func():
+		var b := Builder.new(0.0)
+		for i in 14:
+			var t := Transform3D(Basis(Vector3.FORWARD, PI / 2).rotated(Vector3.UP, 0.25), Vector3(-2.0 + i * 0.29, 0.25, 0))
+			b.cyl_xf(P.STEEL, t, 0.26, 0.26, 0.012, 10, false)
+		return b.mesh())
+
 # ------------------------------------------------------------- characters
 
 ## Builds a humanoid with pivots the Rust Npc animates:

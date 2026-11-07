@@ -35,6 +35,7 @@ func build_world() -> void:
 	_build_interiors()
 	_build_grounds()
 	_build_skyline()
+	_build_detail()
 	_build_nav()
 	_build_interactables()
 	_build_audio()
@@ -495,6 +496,143 @@ func _build_skyline() -> void:
 	dirigible.add_child(dm)
 	add_child(dirigible)
 
+func _build_detail() -> void:
+	var b := Builder.new(0.0)
+	# Road paint: lane dashes, edge lines, crossings. Concrete-pale so snow covers it.
+	for x in [-5.0, 5.0]:
+		var z := 33.0
+		while z < 168.0:
+			if z < 79.0 or z > 111.0 or absf(x) > 3.0:
+				b.box(P.CONCRETE_PALE, Vector3(x, 0.024, z + 1.5), Vector3(0.14, 0.008, 3.0), false)
+			z += 7.0
+	for x in [-9.3, 9.3]:
+		b.box(P.CONCRETE_PALE, Vector3(x, 0.024, 107.0), Vector3(0.12, 0.008, 118.0), false)
+	for i in 9:
+		b.box(P.CONCRETE_PALE, Vector3(-8.0 + i * 2.0, 0.024, 48.5), Vector3(0.9, 0.008, 3.2), false)
+	var xr := -64.0
+	while xr < 64.0:
+		if absf(xr) > 10.0:
+			b.box(P.CONCRETE_PALE, Vector3(xr + 1.5, 0.024, 39.0), Vector3(3.0, 0.008, 0.14), false)
+		xr += 7.0
+	# Facade rhythm: floor bands across every tower face.
+	var heights := [18.0, 26.0, 14.0, 32.0, 20.0]
+	var tanks := []
+	var masts := []
+	var acs := []
+	for side in [-1, 1]:
+		for i in 4:
+			var z := 58.0 + i * 30.0
+			var h: float = heights[(i + (1 if side > 0 else 0)) % heights.size()]
+			var face: float = side * 19.0 - side * 0.25
+			var y := 8.6
+			while y < h - 1.0:
+				b.box(P.CONCRETE_PALE, Vector3(face, y, z), Vector3(0.5, 0.16, 20.0), false)
+				y += 3.6
+			tanks.append(Transform3D(Basis(Vector3.UP, i * 0.7), Vector3(side * 30.0 + 3.5, h + 0.8, z - 4.0)))
+			masts.append(Transform3D(Basis(Vector3.UP, i * 1.3), Vector3(side * 30.0 - 4.0, h + 0.8, z + 5.0)))
+			var rng := RandomNumberGenerator.new()
+			rng.seed = i * 17 + (side + 1) * 5
+			for k in 5:
+				var ay := rng.randf_range(7.0, h - 2.0)
+				ay = 8.6 + floor((ay - 8.6) / 3.6) * 3.6 + 0.55
+				acs.append(Transform3D(Basis(Vector3.UP, -PI / 2 * side), Vector3(face - side * 0.55, ay, z + rng.randf_range(-8.5, 8.5))))
+	# Barracks and booth roofs.
+	tanks.append(Transform3D(Basis(), Vector3(33, 6.0, -37)))
+	masts.append(Transform3D(Basis(), Vector3(26, 6.0, -33)))
+	masts.append(Transform3D(Basis(), Vector3(9.5, 3.3, 26.5)))
+	masts.append(Transform3D(Basis().scaled(Vector3(1.4, 1.6, 1.4)), Vector3(-6, 10.1, -26)))
+	b.commit(self, "Detail", 260.0)
+	Builder.scatter(self, Builder.water_tank(), tanks, 300.0)
+	Builder.scatter(self, Builder.antenna(), masts, 300.0, false)
+	Builder.scatter(self, Builder.ac_unit(), acs, 120.0, false)
+	# Street furniture.
+	var benches := []
+	var bins := []
+	var booths := []
+	var bollards := []
+	var kiosks := []
+	for side in [-1, 1]:
+		for i in 5:
+			var z := 56.0 + i * 26.0
+			benches.append(Transform3D(Basis(Vector3.UP, -PI / 2 * side), Vector3(side * 15.3, 0.15, z)))
+			bins.append(Transform3D(Basis(), Vector3(side * 15.0, 0.15, z + 1.7)))
+		for z in [78.0, 138.0]:
+			booths.append(Transform3D(Basis(Vector3.UP, PI / 2 * side), Vector3(side * 15.2, 0.15, z + (4.0 if side > 0 else 0.0))))
+		kiosks.append(Transform3D(Basis(Vector3.UP, PI / 2 * side), Vector3(side * 14.4, 0.15, 104.0 + side * 18.0)))
+		for k in 5:
+			bollards.append(Transform3D(Basis(), Vector3(side * (10.6 + k * 1.2), 0.15, 46.0)))
+	for k in 7:
+		bollards.append(Transform3D(Basis(), Vector3(-6.0 + k * 2.0, 0.0, 33.6)))
+	booths.append(Transform3D(Basis(Vector3.UP, PI), Vector3(13.0, 0.0, 34.5)))
+	Builder.scatter(self, Builder.bench(), benches, 90.0)
+	Builder.scatter(self, Builder.bin(), bins, 80.0)
+	Builder.scatter(self, Builder.phone_booth(), booths, 110.0)
+	Builder.scatter(self, Builder.bollard(), bollards, 80.0)
+	Builder.scatter(self, Builder.kiosk(), kiosks, 140.0)
+	var col := Builder.new()
+	for t in booths:
+		col.kit.add_collider(Transform3D(t.basis, t.origin + Vector3(0, 1.25, -0.1)), Vector3(1.1, 2.5, 0.9))
+	for t in kiosks:
+		col.kit.add_collider(Transform3D(t.basis, t.origin + Vector3(0, 1.1, 0)), Vector3(2.2, 2.2, 1.6))
+	for t in bollards:
+		col.kit.add_collider(Transform3D(t.basis, t.origin + Vector3(0, 0.45, 0)), Vector3(0.3, 0.9, 0.3))
+	for t in benches:
+		col.kit.add_collider(Transform3D(t.basis, t.origin + Vector3(0, 0.3, 0)), Vector3(1.9, 0.6, 0.5))
+	# Parked cars along both curbs, in a few period colours.
+	var slots := [P.CHARCOAL, P.TEAL, P.BEIGE, P.PETROL, P.TERRACOTTA, P.WARM_GREY]
+	var spots := [[-8.2, 60.0, 0.0], [-8.2, 74.0, 0.0], [-8.2, 128.0, 0.0], [8.2, 66.0, PI], [8.2, 98.0, PI], [8.2, 146.0, PI], [-8.2, 156.0, 0.0]]
+	for i in spots.size():
+		var cp := Builder.car_prop(slots[i % slots.size()])
+		cp.position = Vector3(spots[i][0], 0.2, spots[i][1])
+		cp.rotation.y = spots[i][2]
+		add_child(cp)
+		col.kit.add_collider(Builder.xf(Vector3(spots[i][0], 0.95, spots[i][1]), spots[i][2]), Vector3(1.9, 1.5, 4.5))
+	col.commit(self, "DetailCol")
+	# Compound: hedges around the court, wire on the walls, camera eyes.
+	var hedges := []
+	for z in [6.0, 10.5, 15.0]:
+		for x in [-13.0, 13.0]:
+			hedges.append(Transform3D(Basis(Vector3.UP, PI / 2), Vector3(x, 0, z)))
+	for x in [-20.0, -16.0, 16.0, 20.0]:
+		hedges.append(Transform3D(Basis(), Vector3(x, 0, 2.0)))
+	Builder.scatter(self, Builder.hedge(), hedges, 110.0)
+	var wire := []
+	var wx := -38.0
+	while wx < 39.0:
+		if absf(wx) > 7.0:
+			wire.append(Transform3D(Basis(), Vector3(wx, 4.5, 30.0)))
+		wire.append(Transform3D(Basis(), Vector3(wx, 4.5, -45.0)))
+		wx += 4.0
+	var wz := -43.0
+	while wz < 29.0:
+		wire.append(Transform3D(Basis(Vector3.UP, PI / 2), Vector3(-40.0, 4.5, wz)))
+		if wz < -39.0 or wz > -31.0:
+			wire.append(Transform3D(Basis(Vector3.UP, PI / 2), Vector3(40.0, 4.5, wz)))
+		wz += 4.0
+	Builder.scatter(self, Builder.wire_coil(), wire, 120.0, false)
+	var cams := [
+		Transform3D(Basis(Vector3.UP, 0.4), Vector3(-4.5, 6.0, 31.2)),
+		Transform3D(Basis(Vector3.UP, -0.4), Vector3(4.5, 6.0, 31.2)),
+		Transform3D(Basis(Vector3.UP, PI * 0.75), Vector3(-17.7, 4.0, -8.0)),
+		Transform3D(Basis(Vector3.UP, -PI * 0.75), Vector3(17.7, 4.0, -8.0)),
+		Transform3D(Basis(Vector3.UP, PI), Vector3(0, 3.8, -30.4)),
+		Transform3D(Basis(Vector3.UP, -PI / 2), Vector3(17.9, 3.6, -25.0)),
+		Transform3D(Basis(Vector3.UP, PI / 2 + 0.5), Vector3(-39.3, 4.0, -38.0)),
+		Transform3D(Basis(Vector3.UP, -PI / 2 - 0.5), Vector3(39.3, 4.0, 22.0)),
+	]
+	Builder.scatter(self, Builder.wall_camera(), cams, 70.0, false)
+	# A reflection probe over the boulevard and one over the court, so wet
+	# stone mirrors the lit windows (captured once; free at runtime).
+	for pr in [[Vector3(0, 6, 100), Vector3(40, 30, 140)], [Vector3(0, 4, 8), Vector3(70, 16, 50)]]:
+		var probe := ReflectionProbe.new()
+		probe.position = pr[0]
+		probe.size = pr[1]
+		probe.update_mode = ReflectionProbe.UPDATE_ONCE
+		probe.box_projection = true
+		probe.max_distance = 220.0
+		probe.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+		add_child(probe)
+
 # ============================================================== navigation
 
 func _n(id: String, p: Vector3) -> void:
@@ -702,6 +840,7 @@ func _build_audio() -> void:
 # ============================================================== mission flow
 
 func _process(dt: float) -> void:
+	super(dt)
 	if get_tree().paused:
 		return
 	Game.sim.mission_tick(dt)
@@ -718,10 +857,12 @@ func _process(dt: float) -> void:
 	player.restricted = 1 if COMPOUND.has_point(player.global_position + Vector3(0, 0.5, 0)) else 0
 	var indoor := absf(player.global_position.x) < 18 and player.global_position.z > -30 and player.global_position.z < -8
 	player.exposure = 0.85 if indoor else lerpf(1.0, 0.55, t)
-	if rain:
+	if weather:
 		var cam := get_viewport().get_camera_3d()
 		var cp := cam.global_position if cam else player.global_position
-		rain.emitting = not (absf(cp.x) < 18.5 and cp.z > -30.5 and cp.z < -7.5 and cp.y < 9.6)
+		var inside := absf(cp.x) < 18.5 and cp.z > -30.5 and cp.z < -7.5 and cp.y < 9.6
+		weather.indoor = inside
+		rain.emitting = not inside and weather.mode != "clear"
 	# Tea.
 	if _tea_timer > 0.0:
 		_tea_timer -= dt
@@ -756,7 +897,7 @@ func _apply_dusk(t: float) -> void:
 	sky_mat.sky_top_color = Color("#5C6669").lerp(Color("#1C2A2E"), t)
 	sky_mat.sky_horizon_color = Color("#8E9699").lerp(Color("#4A5355"), t)
 	sky_mat.ground_horizon_color = Color("#8C9091").lerp(Color("#3E4446"), t)
-	env.fog_light_color = Color("#848D90").lerp(Color("#2E3B3E"), t)
+	base_fog_color = Color("#848D90").lerp(Color("#2E3B3E"), t)
 
 func _route_to(n: Npc, loc: String, run := false) -> void:
 	if not locations.has(loc):

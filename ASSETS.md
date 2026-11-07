@@ -23,6 +23,12 @@ Every asset in the project gets a row here before it enters `/godot`. No row, no
 | shd_kit | World material: concrete, walnut, marble, carpet, steel, foliage, road, fabric, facade windows | all | `godot/shaders/kit.gdshader` | Own work | Own work | - | none | n/a | Wetness and dusk window glow driven at runtime |
 | shd_post / shd_crt | Grade, vignette, grain, damage tint; CRT screens (in-world only) | tech | `godot/shaders/` | Own work | Own work | - | none | n/a | |
 | sfx_procedural | shot, shot_far, dry, reload, step, land, hit, flesh, thud, static, tape, telex, alarm, beep, beep_low, pour, throw, door, ambience; car engine/squeal/wind synth | tech | `bridge/src/sfx.rs`, `bridge/src/vehicle.rs` | Own work | Own work | - | - | n/a | Synthesised at startup; no sample files |
+| shd_psx_post | PS1/PSX colour reduction + ordered dither, merged into `post.gdshader` (screen texture, optional pixelation added) | tech | https://godotshaders.com/shader/ps1-psx-postprocessing/ | Grau | CC0 | - | none | n/a | Adapted; credit kept in the shader header |
+| shd_precip | Screen-space rain/snow streak layer (`precip.gdshader`) | ext | https://godotshaders.com/shader/simple-rain-snow-shader/ | mo32167 | CC0 | - | none | n/a | Adapted (slow snow, alpha, wobble); credit in header |
+| shd_kit_weather | Kit shader additions: global weather (wet gloss, puddle ripples, wall sheeting, snow layer, glints), grime | all | `godot/shaders/kit.gdshader` | Own work | Own work | - | none | n/a | Driven by `scripts/weather.gd` via shader globals |
+| proc_street_props | Bench, bin, phone booth, bollard, kiosk, AC unit, water tank, antenna, hedge, wall camera, wire coil, parked cars, road paint | ext | n/a (`builder.gd`, `province.gd`) | Own work | Own work | est. under 600 each | none | Yes | MultiMesh with visibility ranges |
+| proc_gun_fx | Muzzle flash, tracers, smoke/dust/sparks/mist particles, bullet-hole decal, brass; radial gradient textures generated at runtime | weapon | n/a (`player_rig.gd`) | Own work | Own work | tiny | 64 px generated | n/a | Pooled, no allocations per shot |
+| sfx_procedural_2 | Layered gunshot with echoes, shell, hitmark, whiz, impact, rain loop, wind loop | tech | `bridge/src/sfx.rs` | Own work | Own work | - | - | n/a | Synthesised at startup |
 | font_mono | System monospace font (SystemFont lookup) | UI | OS-provided | OS vendor | Not shipped | - | - | n/a | Nothing bundled; falls back to Godot default |
 
 ## Budgets (starting values, from `instructions.md`)
@@ -54,3 +60,7 @@ Assets over budget need a note here and a reason.
 ## Credits (generated from the log)
 
 List every CC-BY asset here with author, title and URL.
+
+No CC-BY assets yet. CC0 shaders used, credited as a courtesy:
+- "PS1/PSX PostProcessing" by Grau, https://godotshaders.com/shader/ps1-psx-postprocessing/ (CC0)
+- "Simple rain/snow shader" by mo32167, https://godotshaders.com/shader/simple-rain-snow-shader/ (CC0)

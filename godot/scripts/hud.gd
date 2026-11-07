@@ -39,18 +39,16 @@ func _ready() -> void:
 	layer = 10
 	add_to_group("quality_listener")
 	_post = ColorRect.new()
-	_post.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_post.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_post.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var pm := ShaderMaterial.new()
-	pm.shader = preload("res://shaders/post.gdshader")
-	_post.material = pm
+	_post.material = Game.make_post_material()
 	add_child(_post)
 	_root = Control.new()
-	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 	_arcs = Control.new()
-	_arcs.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_arcs.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_arcs.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_arcs.draw.connect(_draw_arcs)
 	_root.add_child(_arcs)
@@ -138,6 +136,7 @@ func setup(lvl: Node, r: PlayerRig, p: FpsController) -> void:
 
 func on_quality_changed() -> void:
 	_post.visible = Game.post_enabled()
+	Game.configure_post(_post.material)
 
 func _label(c: Color, size: int) -> Label:
 	var l := Label.new()
@@ -206,8 +205,8 @@ func _build_pause() -> void:
 	_pause = _big_panel()
 	_pause.offset_left = -220
 	_pause.offset_right = 220
-	_pause.offset_top = -200
-	_pause.offset_bottom = 200
+	_pause.offset_top = -250
+	_pause.offset_bottom = 250
 	_pause.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 	add_child(_pause)
 	var v := VBoxContainer.new()
@@ -228,6 +227,14 @@ func _build_pause() -> void:
 		Game.settings.post = not bool(Game.settings.post)
 		Game.apply_settings()
 		Game.save_settings()))
+	var rb: Button
+	rb = _button("Retro filter: " + Game.RETRO_NAMES[int(Game.settings.retro)], func():
+		rb.text = "Retro filter: " + Game.cycle_retro())
+	v.add_child(rb)
+	var wb: Button
+	wb = _button("Weather: " + str(Game.settings.weather), func():
+		wb.text = "Weather: " + Game.cycle_weather())
+	v.add_child(wb)
 	v.add_child(_button("Mouse sensitivity +", func(): _sens(1.15)))
 	v.add_child(_button("Mouse sensitivity -", func(): _sens(1.0 / 1.15)))
 	v.add_child(_button("Abandon (counts as failure)", func():
@@ -388,11 +395,26 @@ func _draw_arcs() -> void:
 		return
 	var cam := player.get_camera()
 	var centre := _arcs.size * 0.5
-	# Crosshair: a small dot plus a spread ring scaled with bloom.
-	var spread := 3.0 + rig.spread_bloom * 6.0
-	_arcs.draw_circle(centre, 1.8, Color(IVORY, 0.85))
-	if rig.drawn and rig.ads < 0.5:
-		_arcs.draw_arc(centre, 10.0 + spread, 0, TAU, 24, Color(IVORY, 0.35), 1.2)
+	# Crosshair: four ticks placed at the true spread cone, a dot, hit marker.
+	var half_fov := deg_to_rad(cam.fov * 0.5)
+	var px := tan(deg_to_rad(rig.current_spread())) / tan(half_fov) * _arcs.size.y * 0.5
+	var gap := 4.0 + px
+	var a := clampf(1.0 - rig.ads * 1.6, 0.0, 1.0)
+	if rig.drawn and a > 0.01:
+		var c := Color(IVORY, 0.9 * a)
+		var sh := Color(0, 0, 0, 0.45 * a)
+		for d in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
+			_arcs.draw_line(centre + d * gap + Vector2(1, 1), centre + d * (gap + 9.0) + Vector2(1, 1), sh, 2.0)
+			_arcs.draw_line(centre + d * gap, centre + d * (gap + 9.0), c, 2.0)
+	_arcs.draw_circle(centre, 1.6, Color(IVORY, 0.9))
+	if rig.hit_t > 0.0:
+		var hc := RED.lightened(0.15) if rig.hit_kill else (AMBER if rig.hit_head else IVORY)
+		var k := clampf(rig.hit_t / 0.16, 0.0, 1.0)
+		var r0 := 7.0 + (1.0 - k) * 4.0 + (3.0 if rig.hit_kill else 0.0)
+		var ln := 7.0 + (4.0 if rig.hit_kill else 0.0)
+		for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+			var dn: Vector2 = d.normalized()
+			_arcs.draw_line(centre + dn * r0, centre + dn * (r0 + ln), Color(hc, minf(k * 1.5, 1.0)), 2.5 if rig.hit_kill else 2.0)
 	var fwd := -cam.global_transform.basis.z
 	var right := cam.global_transform.basis.x
 	for n in get_tree().get_nodes_in_group("npc"):

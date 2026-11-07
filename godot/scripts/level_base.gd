@@ -13,6 +13,9 @@ var sun: DirectionalLight3D
 var env: Environment
 var sky_mat: ProceduralSkyMaterial
 var rain: GPUParticles3D
+var weather: Weather
+var base_fog_color := Color("#848D90")
+var base_fog_density := 0.0075
 var driving := false
 
 func _ready() -> void:
@@ -92,47 +95,22 @@ func build_environment(rainy := true) -> void:
 		_build_rain()
 
 func _build_rain() -> void:
-	rain = GPUParticles3D.new()
-	rain.amount = 2200
-	rain.lifetime = 0.9
-	rain.visibility_aabb = AABB(Vector3(-25, -20, -25), Vector3(50, 40, 50))
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(22, 1, 22)
-	pm.direction = Vector3(0.08, -1, 0.03)
-	pm.spread = 2.0
-	pm.initial_velocity_min = 22.0
-	pm.initial_velocity_max = 26.0
-	pm.gravity = Vector3(0, -9.8, 0)
-	rain.process_material = pm
-	var qm := QuadMesh.new()
-	qm.size = Vector2(0.012, 0.55)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.albedo_color = Color(0.78, 0.82, 0.84, 0.22)
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
-	m.billboard_keep_scale = true
-	qm.material = m
-	rain.draw_pass_1 = qm
-	rain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	rain.local_coords = false
-	add_child(rain)
-	P.set_wetness(1.0)
+	weather = Weather.new()
+	weather.name = "Weather"
+	add_child(weather)
+	rain = weather.particles
 
 func on_quality_changed() -> void:
 	var q := Game.q()
 	if sun:
 		sun.shadow_enabled = q.shadows
 		sun.directional_shadow_max_distance = q.shadow_dist
-	if rain:
-		rain.visible = float(q.props) > 0.6
-		rain.amount = int(2200 * float(q.props))
 	if player:
 		player.get_camera().far = q.far
 	if car:
 		car.get_node("ChaseCam").far = q.far
-	env.fog_density = 0.0075 if float(q.far) > 300 else 0.012
+	base_fog_density = 0.0075 if float(q.far) > 300 else 0.012
+	env.fog_density = base_fog_density
 	env.glow_enabled = q.name == "HIGH"
 
 # ------------------------------------------------------------- player / car
@@ -199,6 +177,10 @@ func exit_car() -> void:
 	player.set_active(true)
 	Game.play_3d("door", car.global_position, -4)
 
+func debug_relook() -> void:
+	if Game.debug.has("pos") and player:
+		player.set_look(deg_to_rad(float(Game.debug.get("yaw", "0"))), deg_to_rad(float(Game.debug.get("pitch", "0"))))
+
 func recapture_mouse() -> void:
 	if not get_tree().paused and not hud.notebook_open():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -223,7 +205,13 @@ func _physics_process(_dt: float) -> void:
 	if driving and car:
 		# Keep the (hidden) player with the car so AI and zones track it.
 		player.global_position = car.global_position + Vector3(0, 0.2, 0)
-	if rain:
-		var cam := get_viewport().get_camera_3d()
-		if cam:
-			rain.global_position = cam.global_position + Vector3(0, 12, 0)
+
+func _process(_dt: float) -> void:
+	if weather:
+		_weather_env()
+
+## Weather nudges fog toward a snowy white-out (from the level's base values).
+func _weather_env() -> void:
+	var falling := 1.0 if weather.mode == "snow" else 0.0
+	env.fog_light_color = base_fog_color.lerp(Color("#B4BCC0"), clampf(weather.snow * 0.5 + falling * 0.25, 0.0, 0.7))
+	env.fog_density = base_fog_density * (1.0 + falling * 0.9)

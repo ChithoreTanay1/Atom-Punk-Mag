@@ -77,6 +77,12 @@ Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png 
 | Reset car upright | T |
 | Pause / tuning panel / frame-time overlay / fullscreen | Esc / F1 / F3 / F11 |
 
+## Settings (main menu and pause menu)
+
+- **Retro filter:** off / dither / PSX (colour reduction, ordered dither and 450-line pixelation). The HUD stays sharp.
+- **Weather:** rain / snow / clear. Rain builds up wet, glossy streets with puddle ripples and reflections. Snow lays a growing white layer on exposed surfaces. Wetness and snow persist and fade when the weather changes.
+- Debug flags for captures: `--weather=rain|snow|clear`, `--retro=0..2`, `--fire=1` (hold the trigger), `--newcamp=1` (war room without a save).
+
 ## Performance (measured)
 
-Integrated Intel Iris Xe, 1600x900, MEDIUM preset: locked at the 60 fps vsync cap everywhere sampled. The Saptavarta level draws 280–460 calls and 36k–45k primitives per frame; the test track draws about 110 calls and 19k primitives. Quality presets (LOW/MEDIUM/HIGH) change shadows, view distance, render scale, MSAA and the post pass.
+Integrated Intel Iris Xe, 1600x900, MEDIUM preset, PSX filter and weather on: locked at the 60 fps vsync cap everywhere sampled. After the detail pass the Saptavarta level draws 420–650 calls and 40k–88k primitives per frame; the test track about 120 calls and 16k primitives. LOW skips the screen-space precipitation layer. Quality presets (LOW/MEDIUM/HIGH) change shadows, view distance, render scale, MSAA and the post pass.

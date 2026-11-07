@@ -5,17 +5,19 @@ extends Node
 
 const SAVE_PATH := "user://campaign.ron"
 const SETTINGS_PATH := "user://settings.cfg"
+const RETRO_NAMES := ["off", "dither", "PSX"]
+const WEATHERS := ["rain", "snow", "clear"]
 
 const QUALITY := [
-	{"name": "LOW", "scale": 0.7, "shadows": false, "shadow_size": 1024, "shadow_dist": 35.0, "msaa": 0, "post": false, "far": 260.0, "props": 0.55},
-	{"name": "MEDIUM", "scale": 0.85, "shadows": true, "shadow_size": 2048, "shadow_dist": 55.0, "msaa": 0, "post": true, "far": 420.0, "props": 0.8},
-	{"name": "HIGH", "scale": 1.0, "shadows": true, "shadow_size": 4096, "shadow_dist": 80.0, "msaa": 1, "post": true, "far": 700.0, "props": 1.0},
+	{"name": "LOW", "scale": 0.7, "shadows": false, "shadow_size": 1024, "shadow_dist": 35.0, "msaa": 0, "post": true, "far": 260.0, "props": 0.55, "weather_fx": 0},
+	{"name": "MEDIUM", "scale": 0.85, "shadows": true, "shadow_size": 2048, "shadow_dist": 55.0, "msaa": 0, "post": true, "far": 420.0, "props": 0.8, "weather_fx": 1},
+	{"name": "HIGH", "scale": 1.0, "shadows": true, "shadow_size": 4096, "shadow_dist": 80.0, "msaa": 1, "post": true, "far": 700.0, "props": 1.0, "weather_fx": 2},
 ]
 
 var sim: GameSim
 var data_error := ""
 var sfx := {}
-var settings := {"quality": 1, "mouse_scale": 1.0, "volume": 0.8, "fullscreen": false, "post": true}
+var settings := {"quality": 1, "mouse_scale": 1.0, "volume": 0.8, "fullscreen": false, "post": true, "retro": 2, "weather": "rain"}
 var mode := "campaign"  # "campaign" | "free"
 var last_report := ""
 var mono: SystemFont
@@ -63,6 +65,10 @@ func _ready() -> void:
 			debug[kv[0]] = kv[1]
 	if debug.has("quality"):
 		settings.quality = int(debug.quality)
+	if debug.has("weather"):
+		settings.weather = debug.weather
+	if debug.has("retro"):
+		settings.retro = int(debug.retro)
 	apply_settings()
 
 func _data_dir() -> String:
@@ -149,6 +155,33 @@ func mstate() -> Dictionary:
 
 func post_enabled() -> bool:
 	return bool(settings.post) and bool(q().post)
+
+## Full-screen post material (grade + PSX), configured from settings.
+func make_post_material() -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://shaders/post.gdshader")
+	configure_post(m)
+	return m
+
+func configure_post(m: ShaderMaterial) -> void:
+	var r := int(settings.retro)
+	m.set_shader_parameter("psx_enabled", r > 0)
+	m.set_shader_parameter("colors", 24 if r == 1 else 16)
+	m.set_shader_parameter("dither_size", 1 if r == 1 else 2)
+	m.set_shader_parameter("pixel_lines", 450.0 if r == 2 else 0.0)
+
+func cycle_retro() -> String:
+	settings.retro = (int(settings.retro) + 1) % RETRO_NAMES.size()
+	save_settings()
+	get_tree().call_group("quality_listener", "on_quality_changed")
+	return RETRO_NAMES[int(settings.retro)]
+
+func cycle_weather() -> String:
+	var i := WEATHERS.find(str(settings.weather))
+	settings.weather = WEATHERS[(i + 1) % WEATHERS.size()]
+	save_settings()
+	get_tree().call_group("weather_listener", "set_mode", settings.weather)
+	return settings.weather
 
 # ---------------------------------------------------------------- audio
 
@@ -238,7 +271,7 @@ func _build_overlay() -> void:
 	_overlay.add_child(_tuning_panel)
 	_fade = ColorRect.new()
 	_fade.color = Color(0.04, 0.05, 0.05, 0.0)
-	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fade.visible = false
 	var fl := CanvasLayer.new()
@@ -266,6 +299,8 @@ func _unhandled_input(e: InputEvent) -> void:
 		save_settings()
 
 func _process(_dt: float) -> void:
+	if debug.has("shot") and Engine.get_process_frames() == int(debug.get("frames", "120")) - 3:
+		get_tree().call_group("mouse_owner", "debug_relook")
 	if debug.has("shot") and Engine.get_process_frames() == int(debug.get("frames", "120")):
 		var img := get_viewport().get_texture().get_image()
 		img.save_png(debug.shot)

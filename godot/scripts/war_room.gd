@@ -20,13 +20,13 @@ var _ended := false
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.color = U.BG
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 	var m := MarginContainer.new()
-	m.set_anchors_preset(Control.PRESET_FULL_RECT)
+	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right", "top", "bottom"]:
 		m.add_theme_constant_override("margin_" + side, 28)
 	add_child(m)
@@ -123,6 +123,8 @@ func _ready() -> void:
 			return
 		_overlay.visible = false
 		_check_outcome()))
+	if Game.debug.has("newcamp") and not Game.sim.has_campaign():
+		Game.sim.new_campaign(7)
 	refresh()
 	_check_outcome()
 
@@ -183,7 +185,7 @@ func _gov_card(g: Dictionary) -> Control:
 	var status: String = g.status.to_upper().replace("_", " ").replace(":", ": ")
 	var lines := "%s%s, %s of %s%s\n" % ["> " if sel else "", g.name, g.title, g.province, "  [MISSION]" if g.has_mission and serving else ""]
 	if serving:
-		lines += "  loyalty %s %d   paranoia %d   discord %d\n  rival: %s" % [U.bar(g.loyalty, 100.0, 12), int(g.loyalty), int(g.paranoia), int(g.discord), g.rival]
+		lines += "  loyalty %s %d   paranoia %d   discord %d\n  rival: %s" % [U.bar(g.loyalty, 100.0, 12), int(g.loyalty), int(g.paranoia), int(g.discord), g.rival if str(g.rival) != "" else "none"]
 	else:
 		lines += "  %s" % status
 	b.text = lines
