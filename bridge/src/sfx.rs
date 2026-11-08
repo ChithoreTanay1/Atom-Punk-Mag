@@ -205,6 +205,48 @@ fn synth(name: &str) -> (Vec<f32>, bool) {
             let whistle = (tau() * 420.0 * t + (tau() * 0.5 * t).sin() * 3.0).sin() * 0.02 * gust;
             (w * gust + whistle) * 0.7
         }, 35), true),
+        // Two-stroke ring-ding, a loop at about 4000 rpm (67 firings a second):
+        // a raspy expansion-chamber buzz, a little metallic ring, an uneven idle
+        // burble. BikeController pitches it to the revs.
+        // A vehicle hitting something: a low crunch and bent metal ringing.
+        "crash" => (render(0.8, |t, r| {
+            let crunch = lp.run(noise(r), 0.25) * (-t * 7.0).exp() * 1.2;
+            let body = (tau() * 62.0 * t).sin() * (-t * 8.0).exp();
+            let metal = ((tau() * 410.0 * t).sin() + (tau() * 677.0 * t).sin() * 0.7 + (tau() * 1130.0 * t).sin() * 0.4) * (-t * 11.0).exp() * 0.28;
+            (crunch + body + metal).clamp(-1.0, 1.0)
+        }, 61), false),
+        // Laminated glass taking a round: a sharp tick and a short crackle.
+        "glass_crack" => (render(0.3, |t, r| {
+            let tick = noise(r) * (-t * 90.0).exp();
+            let crackle = if noise(r) > 0.93 { noise(r) * (-t * 11.0).exp() } else { 0.0 };
+            (tick + crackle + (tau() * 3100.0 * t).sin() * (-t * 45.0).exp() * 0.3).clamp(-1.0, 1.0)
+        }, 62), false),
+        // The pane letting go: a burst, then pieces tinkling down.
+        "glass_break" => (render(1.1, |t, r| {
+            let burst = noise(r) * (-t * 13.0).exp() * 0.9;
+            let d = (-t * 3.0).exp();
+            let tink = if noise(r) > 0.985 { 0.9 } else { 0.0 };
+            let ring = (tau() * (3300.0 + 900.0 * (t * 37.0).sin()) * t).sin() * d * 0.1;
+            (burst + tink * d + ring).clamp(-1.0, 1.0)
+        }, 63), false),
+        // A tyre going: one sharp bang, then air rushing out.
+        "tyre_pop" => (render(0.9, |t, r| {
+            let bang = (noise(r) + (tau() * 180.0 * t).sin()) * (-t * 45.0).exp();
+            let hiss = noise(r) * 0.22 * (-t * 3.6).exp() * (1.0 - (-t * 30.0).exp());
+            (bang + hiss).clamp(-1.0, 1.0)
+        }, 64), false),
+        "ringding" => {
+            let f0 = 66.666f32;
+            (render(0.75, |t, r| {
+                let ph = (t * f0).fract();
+                let burst = (-ph * 7.0).exp();
+                let buzz = (ph * 2.0 - 1.0) * 0.55 + (ph * 4.0).fract() * 0.2;
+                let chamber = (tau() * f0 * 3.0 * t).sin() * 0.25 + (tau() * f0 * 5.0 * t).sin() * 0.14;
+                let ring = (tau() * f0 * 22.0 * t).sin() * burst * 0.06;
+                let rasp = lp.run(noise(r), 0.5) * burst * 0.5;
+                ((buzz + chamber) * (0.45 + 0.55 * burst) + ring + rasp).clamp(-1.0, 1.0) * 0.7
+            }, 36), true)
+        }
         _ => (vec![0.0; 10], false),
     }
 }
@@ -243,7 +285,7 @@ impl SfxBank {
         [
             "shot", "shell", "hitmark", "whiz", "impact", "shot_far", "dry", "reload", "step", "land", "hit", "flesh", "thud", "static", "tape",
             "telex", "alarm", "beep", "beep_low", "pour", "throw", "door", "ambience", "rain", "wind",
-            "silenced", "swish", "stab", "grapple", "winch",
+            "silenced", "swish", "stab", "grapple", "winch", "ringding", "crash", "glass_crack", "glass_break", "tyre_pop",
         ]
         .iter()
         .map(|x| GString::from(*x))

@@ -260,7 +260,11 @@ impl Campaign {
             if let Some(g) = self.gov_mut(id) { g.paranoia += f.paranoia_target; }
         } else {
             let successor = self.gov(id).and_then(|g| g.successor.clone());
+            let rival = self.gov(id).and_then(|g| g.rival.clone());
             if let Some(g) = self.gov_mut(id) { g.status = GovStatus::Removed(m); }
+            if let Some(g) = rival.as_deref().and_then(|r| self.gov_mut(r)) {
+                g.paranoia += f.paranoia_rival * scale;
+            }
             for g in self.governors.iter_mut().filter(|g| g.serving() && g.id != id) {
                 g.loyalty += f.loyalty_others * scale;
                 g.paranoia += f.paranoia_others * scale;
@@ -279,10 +283,36 @@ impl Campaign {
         text
     }
 
-    /// Field mission result for tonight.
-    pub fn apply_mission(&mut self, c: &Content, gov_id: &str, m: Method) -> String {
+    /// Field mission result for tonight. `extra_heat` is what the tapes and the
+    /// crowd add on top of the method's own fallout.
+    pub fn apply_mission(&mut self, c: &Content, gov_id: &str, m: Method, extra_heat: f32) -> String {
         self.mission_done_tonight = true;
-        self.remove_governor(c, gov_id, m, 1.0)
+        self.heat += extra_heat;
+        let text = self.remove_governor(c, gov_id, m, 1.0);
+        if extra_heat >= 1.0 {
+            self.log(format!("Avekṣā's tapes and the crowd's accounts add {extra_heat:.0} to the heat."));
+        }
+        text
+    }
+
+    /// The serving governors with a playable field mission.
+    pub fn mission_targets(&self) -> Vec<&GovState> {
+        self.governors.iter().filter(|g| g.serving() && g.mission.is_some()).collect()
+    }
+
+    /// A save made before a governor gained a mission keeps working.
+    pub fn refresh_from_content(&mut self, c: &Content) {
+        for g in &mut self.governors {
+            if g.mission.is_none() {
+                g.mission = c.governor(&g.id).and_then(|d| d.mission.clone());
+            }
+            if g.rival.is_none() {
+                g.rival = c.governor(&g.id).and_then(|d| d.rival.clone());
+            }
+            if g.successor.is_none() {
+                g.successor = c.governor(&g.id).and_then(|d| d.successor.clone());
+            }
+        }
     }
 
     /// Close the night: rumors spread, loyalties drift, events fire.
@@ -423,7 +453,7 @@ mod tests {
         let mut s = Campaign::new(&c, 1);
         let target = s.mission_target().unwrap().id.clone();
         let before = s.stability;
-        s.apply_mission(&c, &target, Method::Frame);
+        s.apply_mission(&c, &target, Method::Frame, 0.0);
         assert!(s.stability < before);
         assert!(matches!(s.gov(&target).unwrap().status, GovStatus::Removed(Method::Frame)));
         // Successor now holds the playable province.
@@ -436,7 +466,7 @@ mod tests {
         let c = content();
         let mut s = Campaign::new(&c, 1);
         let t = s.mission_target().unwrap().clone();
-        s.apply_mission(&c, &t.id, Method::Failed);
+        s.apply_mission(&c, &t.id, Method::Failed, 0.0);
         assert!(s.gov(&t.id).unwrap().paranoia > t.paranoia);
         assert!(s.gov(&t.id).unwrap().serving());
     }

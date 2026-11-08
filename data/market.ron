@@ -11,6 +11,7 @@
 //   death:<governor id>    a governor is killed (any method)
 //   removed:<governor id>  a governor leaves office (campaign)
 //   method:<quiet_kill|loud_kill|poison|frame|failed>
+//   crush                  people die in a panic at a public event
 //   alarm                  a compound goes on alarm
 //   night                  a night passes in the war room
 (
@@ -105,13 +106,21 @@
             description: "Carbines, armour and guard contracts. Disorder is good for business.",
             ties: [],
         ),
+        (
+            id: "avks", name: "Avekṣā Corp", ticker: "AVKS", sector: "arms", price: 54.5, volatility: 0.009,
+            description: "The king's private eyes: gantry cameras, tethered balloons, saucer drones, a tape of everything. A failed attempt on anyone is a new contract.",
+            ties: [(entity: "gov_hiranyavaha", on_death: 0.01), (entity: "gov_hiranyavaha_2", on_death: 0.01)],
+        ),
     ],
     reactions: [
         (key: "death:*", headline: "Governor killed: arms makers bid up, the bank sold", moves: [
             (target: "dpac", pct: 0.06), (target: "nrtb", pct: -0.03), (target: "all", pct: -0.01),
         ]),
-        (key: "method:loud_kill", headline: "Gunfire in a governor's compound: panic selling", moves: [
-            (target: "all", pct: -0.02), (target: "dpac", pct: 0.05), (target: "nrtb", pct: -0.02),
+        (key: "method:loud_kill", headline: "Gunfire around a governor: panic selling, security contracts bid up", moves: [
+            (target: "all", pct: -0.02), (target: "dpac", pct: 0.05), (target: "nrtb", pct: -0.02), (target: "avks", pct: 0.11),
+        ]),
+        (key: "method:quiet_kill", headline: "A governor is found dead: the tape houses say little", moves: [
+            (target: "avks", pct: 0.004),
         ]),
         (key: "method:poison", headline: "Poisoning rumour hits tea merchants", moves: [
             (target: "stsc", pct: -0.11), (target: "sector:agri", pct: -0.02),
@@ -119,11 +128,14 @@
         (key: "method:frame", headline: "The king arrests his own governor: the bank wobbles", moves: [
             (target: "nrtb", pct: -0.06), (target: "aktc", pct: 0.04),
         ]),
-        (key: "method:failed", headline: "The governor survives: steady trading", moves: [
-            (target: "nrtb", pct: 0.01),
+        (key: "method:failed", headline: "The governor survives: Avekṣā wins the follow-on contract", moves: [
+            (target: "nrtb", pct: 0.01), (target: "avks", pct: 0.09),
         ]),
-        (key: "alarm", headline: "Alarm raised in Saptavarta: security stocks firm", moves: [
-            (target: "dpac", pct: 0.02), (target: "sector:cement", pct: -0.01),
+        (key: "crush", headline: "Deaths in a festival crowd: Avekṣā's safety contract under review, then renewed", moves: [
+            (target: "avks", pct: 0.03), (target: "all", pct: -0.005),
+        ]),
+        (key: "alarm", headline: "Alarm raised at a governor's seat: security stocks firm", moves: [
+            (target: "dpac", pct: 0.02), (target: "avks", pct: 0.02), (target: "sector:cement", pct: -0.01),
         ]),
         (key: "removed:*", headline: "A governorate changes hands", moves: [
             (target: "sector:finance", pct: -0.015),

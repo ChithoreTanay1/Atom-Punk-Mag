@@ -104,6 +104,65 @@ impl KitBuilder {
         s.quad([p(-h.x, -h.y, -h.z), p(-h.x, h.y, -h.z), p(-h.x, h.y, h.z), p(-h.x, -h.y, h.z)], n(Vector3::LEFT), [bot, top, top, bot]);
     }
 
+    /// Rough rock: a box of size `size` whose faces are displaced and whose
+    /// corners are rounded off, flat-shaded. Displacement depends only on
+    /// position, so neighbouring faces meet. No collider; add boxes separately.
+    #[func]
+    fn add_rock(&mut self, slot: i64, xf: Transform3D, size: Vector3, seed: i64, segments: i64, rough: f32) {
+        let seg = segments.clamp(1, 24) as i32;
+        let h = size / 2.0;
+        let sd = seed as f32 * 0.137;
+        let bump = |p: Vector3| -> f32 {
+            let q = p * 0.31 + Vector3::splat(sd);
+            let a = (q.x * 2.1 + q.y * 1.3).sin() * (q.z * 1.7 - q.y * 0.9).cos();
+            let b = (q.x * 5.3 - q.z * 3.1 + 1.7).sin() * (q.y * 4.7 + q.x).cos() * 0.5;
+            let c = (q.y * 11.0 + q.z * 9.0).sin() * (q.x * 13.0).cos() * 0.25;
+            (a + b + c) * rough
+        };
+        let shape = |u: Vector3| -> Vector3 {
+            // Pull a point of the unit cube toward a rounded box.
+            let v = Vector3::new(u.x * h.x, u.y * h.y, u.z * h.z);
+            let n = Vector3::new(u.x.powi(3) / h.x.max(1.0), u.y.powi(3) / h.y.max(1.0), u.z.powi(3) / h.z.max(1.0)).normalized_or_zero();
+            let d = Vector3::new(u.x * h.x.min(6.0), u.y * h.y.min(6.0), u.z * h.z.min(6.0)).normalized_or_zero();
+            let mut p = v - Vector3::new(u.x.powi(5) * 0.0, 0.0, 0.0);
+            let corner = (u.x.abs() * u.y.abs()).max(u.y.abs() * u.z.abs()).max(u.x.abs() * u.z.abs()).powi(4);
+            p -= n * corner * h.x.min(h.y).min(h.z) * 0.22;
+            p + d * bump(p)
+        };
+        let faces: [(Vector3, Vector3, Vector3); 6] = [
+            (Vector3::RIGHT, Vector3::BACK, Vector3::UP),
+            (Vector3::LEFT, Vector3::FORWARD, Vector3::UP),
+            (Vector3::UP, Vector3::RIGHT, Vector3::BACK),
+            (Vector3::DOWN, Vector3::RIGHT, Vector3::FORWARD),
+            (Vector3::BACK, Vector3::LEFT, Vector3::UP),
+            (Vector3::FORWARD, Vector3::RIGHT, Vector3::UP),
+        ];
+        let ao = self.strength();
+        let basis = xf.basis;
+        let origin = xf.origin;
+        let s = self.surf(slot);
+        for (n, ua, va) in faces {
+            for j in 0..seg {
+                for i in 0..seg {
+                    let corner = |a: i32, b: i32| {
+                        let (x, y) = (a as f32 / seg as f32 * 2.0 - 1.0, b as f32 / seg as f32 * 2.0 - 1.0);
+                        shape(n + ua * x + va * y)
+                    };
+                    let (a, b, c, d) = (corner(i, j), corner(i + 1, j), corner(i + 1, j + 1), corner(i, j + 1));
+                    let tri_n = (c - a).cross(b - a).normalized_or_zero();
+                    let tri_n = if tri_n.dot(n) < 0.0 { -tri_n } else { tri_n };
+                    let shade = |p: Vector3| 1.0 - ao * (1.0 - ((p.y + h.y) / 3.0).clamp(0.0, 1.0));
+                    let w = |p: Vector3| origin + basis * p;
+                    let wn = (basis * tri_n).normalized_or_zero();
+                    // Winding: pick the order whose geometric normal is outward.
+                    let order = (d - a).cross(c - a).dot(n) > 0.0;
+                    let q = if order { [a, b, c, d] } else { [a, d, c, b] };
+                    s.quad([w(q[0]), w(q[1]), w(q[2]), w(q[3])], wn, [shade(q[0]), shade(q[1]), shade(q[2]), shade(q[3])]);
+                }
+            }
+        }
+    }
+
     /// Ramp: footprint `size.x` by `size.z`, rising from 0 at -Z to `size.y`
     /// at +Z. Origin at the centre of the footprint, on the ground.
     #[func]
@@ -178,6 +237,12 @@ impl KitBuilder {
     /// the band between vertex i and i+1 (-1 keeps the loft closed).
     #[func]
     fn add_loft(&mut self, slot: i64, xf: Transform3D, profile: PackedVector3Array, open_edge: i64) {
+        self.add_loft_open(slot, xf, profile, PackedInt32Array::from(&[open_edge as i32][..]));
+    }
+
+    /// `add_loft` leaving several bands out.
+    #[func]
+    fn add_loft_open(&mut self, slot: i64, xf: Transform3D, profile: PackedVector3Array, open: PackedInt32Array) {
         let pts: Vec<Vector3> = profile.as_slice().to_vec();
         let n = pts.len();
         if n < 3 { return; }
@@ -214,7 +279,7 @@ impl KitBuilder {
         }
         for i in 0..n {
             // `open_edge` leaves one band out (e.g. the underside of a canopy).
-            if i as i64 == open_edge { continue; }
+            if open.as_slice().contains(&(i as i32)) { continue; }
             let j = (i + 1) % n;
             let (a, bb, c, d) = (side(i, 1.0), side(j, 1.0), side(j, -1.0), side(i, -1.0));
             emit(a, bb, c);

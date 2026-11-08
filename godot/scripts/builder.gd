@@ -428,7 +428,179 @@ static func make_car(_body_slot := P.CAR_PAINT) -> ArcadeCar:
 	var cockpit := CarCockpit.new()
 	cockpit.name = "Cockpit"
 	car.add_child(cockpit)
+	var ws := Windshield.new()
+	ws.name = "Windshield"
+	car.add_child(ws)
+	var dent := CarDent.new()
+	dent.name = "Dent"
+	car.add_child(dent)
+	car.add_child(damage_smoke(Vector3(0, 0.75, -1.6)))
 	return car
+
+## Dark smoke from a damaged engine; the level turns it on by hull.
+static func damage_smoke(at: Vector3) -> CPUParticles3D:
+	var s := CPUParticles3D.new()
+	s.name = "DamageSmoke"
+	s.amount = 18
+	s.lifetime = 1.8
+	s.emitting = false
+	s.local_coords = false
+	s.position = at
+	s.direction = Vector3.UP
+	s.spread = 16.0
+	s.initial_velocity_min = 0.8
+	s.initial_velocity_max = 2.0
+	s.gravity = Vector3(0, 0.5, 0)
+	s.scale_amount_min = 0.6
+	s.scale_amount_max = 1.6
+	var q := QuadMesh.new()
+	q.size = Vector2(0.8, 0.8)
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.08, 0.08, 0.08, 0.32)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	var puff := GradientTexture2D.new()
+	puff.fill = GradientTexture2D.FILL_RADIAL
+	puff.fill_from = Vector2(0.5, 0.5)
+	puff.fill_to = Vector2(1.0, 0.5)
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1, 1, 1, 1))
+	ramp.set_color(1, Color(1, 1, 1, 0))
+	puff.gradient = ramp
+	m.albedo_texture = puff
+	q.material = m
+	s.mesh = q
+	return s
+
+## A pilgrim for the crowd's MultiMesh: 120-odd triangles, robed, about 1.7 m.
+## The head is coloured by height in crowd.gdshader, the robe by the instance.
+static func pilgrim() -> Mesh:
+	return cached("pilgrim", func():
+		var b := Builder.new(0.25)
+		b.cyl(P.PILGRIM, Vector3(0, 0.45, 0), 0.27, 0.19, 0.9, 7)
+		b.cyl(P.PILGRIM, Vector3(0, 1.12, 0), 0.19, 0.21, 0.46, 7)
+		b.box(P.PILGRIM, Vector3(-0.25, 1.05, -0.03), Vector3(0.1, 0.6, 0.12), false)
+		b.box(P.PILGRIM, Vector3(0.25, 1.05, -0.03), Vector3(0.1, 0.6, 0.12), false)
+		b.cyl(P.PILGRIM, Vector3(0, 1.38, 0), 0.2, 0.08, 0.08, 7)
+		b.cyl(P.PILGRIM, Vector3(0, 1.54, 0), 0.1, 0.1, 0.24, 7)
+		b.cyl(P.PILGRIM, Vector3(0, 1.67, 0), 0.1, 0.05, 0.05, 7)
+		return b.mesh())
+
+## The Kestrel Shikra 250 [INVENTED]: an original mid-80s two-stroke street
+## bike. Square tank, half fairing, twin expansion chambers, tail hump.
+static func shikra_mesh(paint: int) -> Mesh:
+	return cached("shikra_%d" % paint, func():
+		var b := Builder.new(0.15)
+		# Frame spine, engine block with cooling fins.
+		b.box(P.CHARCOAL, Vector3(0, 0.74, -0.12), Vector3(0.1, 0.09, 1.0), false)
+		b.box(P.BLACK, Vector3(0, 0.5, -0.02), Vector3(0.34, 0.32, 0.46), false)
+		for i in 5:
+			b.box(P.STEEL, Vector3(0, 0.66 + i * 0.024, -0.1), Vector3(0.38, 0.012, 0.28), false)
+		# Tank, fairing, tail hump, seat.
+		b.box(paint, Vector3(0, 0.92, -0.2), Vector3(0.3, 0.2, 0.52), false)
+		b.box(P.IVORY, Vector3(0, 0.925, -0.2), Vector3(0.31, 0.05, 0.53), false)
+		b.box(paint, Vector3(0, 1.02, -0.72), Vector3(0.36, 0.34, 0.16), false)
+		b.box(P.CAR_GLASS, Vector3(0, 1.23, -0.76), Vector3(0.3, 0.2, 0.03), false)
+		b.box(P.LAMP, Vector3(0, 0.98, -0.815), Vector3(0.2, 0.13, 0.03), false)
+		b.box(P.BLACK, Vector3(0, 0.84, 0.28), Vector3(0.26, 0.09, 0.56), false)
+		b.box(paint, Vector3(0, 0.93, 0.62), Vector3(0.26, 0.16, 0.26), false)
+		b.box(P.AMBER, Vector3(0, 0.92, 0.76), Vector3(0.18, 0.05, 0.02), false)
+		# Forks, bars, swingarm.
+		for s in [-1, 1]:
+			b.box_xf(P.CHROME, Transform3D(Basis(Vector3.RIGHT, -0.42), Vector3(s * 0.1, 0.6, -0.56)), Vector3(0.04, 0.64, 0.04))
+			b.box(P.CHARCOAL, Vector3(s * 0.09, 0.4, 0.4), Vector3(0.03, 0.05, 0.62), false)
+			# Expansion chamber: fat in the middle, tapering to the stinger.
+			var t := Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(s * 0.2, 0.34, 0.06))
+			b.cyl_xf(P.BLACK, Transform3D(t.basis, t.origin + Vector3(0, 0, -0.26)), 0.03, 0.075, 0.34, 8)
+			b.cyl_xf(P.BLACK, Transform3D(t.basis, t.origin + Vector3(0, 0, 0.14)), 0.075, 0.075, 0.46, 8)
+			b.cyl_xf(P.CHROME, Transform3D(t.basis, t.origin + Vector3(0, 0.03, 0.5)), 0.075, 0.022, 0.28, 8)
+		return b.mesh())
+
+static func shikra_wheel() -> Mesh:
+	return cached("shikra_wheel", func():
+		var b := Builder.new(0.0)
+		var side := Basis(Vector3.BACK, PI / 2)
+		b.cyl_xf(P.TYRE, Transform3D(side, Vector3.ZERO), 0.31, 0.31, 0.11, 18)
+		b.cyl_xf(P.STEEL, Transform3D(side, Vector3.ZERO), 0.2, 0.2, 0.13, 14)
+		b.cyl_xf(P.CHROME, Transform3D(side, Vector3.ZERO), 0.05, 0.05, 0.16, 8)
+		for i in 3:
+			var a := i * TAU / 3.0
+			b.box_xf(P.BLACK, Transform3D(Basis(Vector3.RIGHT, a), Vector3.ZERO), Vector3(0.14, 0.04, 0.38))
+		return b.mesh())
+
+static func shikra_rider(paint: int) -> Mesh:
+	return cached("shikra_rider_%d" % paint, func():
+		var b := Builder.new(0.1)
+		var lean := Basis(Vector3.RIGHT, -0.55)
+		b.box_xf(paint, Transform3D(lean, Vector3(0, 1.22, 0.1)), Vector3(0.38, 0.6, 0.22))
+		b.cyl(P.BLACK, Vector3(0, 1.62, -0.14), 0.13, 0.13, 0.22, 10)
+		b.box(P.VISOR, Vector3(0, 1.63, -0.26), Vector3(0.2, 0.08, 0.02), false)
+		for s in [-1, 1]:
+			b.box_xf(paint, Transform3D(Basis(Vector3.RIGHT, -1.0), Vector3(s * 0.2, 1.22, -0.2)), Vector3(0.09, 0.09, 0.56))
+			b.box_xf(P.CHARCOAL, Transform3D(Basis(Vector3.RIGHT, 0.7), Vector3(s * 0.17, 0.82, 0.22)), Vector3(0.13, 0.13, 0.52))
+			b.box(P.CHARCOAL, Vector3(s * 0.19, 0.5, 0.06), Vector3(0.11, 0.42, 0.13), false)
+		return b.mesh())
+
+static func make_bike(paint := P.TEAL) -> BikeController:
+	var bk := BikeController.new()
+	bk.name = "Bike"
+	bk.add_to_group("bikes")
+	var col := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(0.5, 0.8, 1.8)
+	col.shape = bs
+	col.position = Vector3(0, 0.78, 0)
+	bk.add_child(col)
+	var vis := Node3D.new()
+	vis.name = "Visual"
+	bk.add_child(vis)
+	var mi := MeshInstance3D.new()
+	mi.mesh = shikra_mesh(paint)
+	vis.add_child(mi)
+	var rider := MeshInstance3D.new()
+	rider.name = "Rider"
+	rider.mesh = shikra_rider(P.PETROL if paint == P.CARBON else P.LEATHER)
+	rider.visible = false
+	vis.add_child(rider)
+	var front := BikeCockpit.new()
+	front.name = "Front"
+	vis.add_child(front)
+	for n in ["WheelF", "WheelR"]:
+		var w := Node3D.new()
+		w.name = n
+		w.position = Vector3(0, 0.45, -0.72 if n == "WheelF" else 0.72)
+		var wm := MeshInstance3D.new()
+		wm.mesh = shikra_wheel()
+		w.add_child(wm)
+		bk.add_child(w)
+	# Two-stroke smoke, blue-white, from the stingers.
+	var smoke := CPUParticles3D.new()
+	smoke.name = "Smoke"
+	smoke.amount = 16
+	smoke.lifetime = 1.4
+	smoke.emitting = false
+	smoke.local_coords = false
+	smoke.position = Vector3(0, 0.38, 0.86)
+	smoke.direction = Vector3(0, 0.25, 1)
+	smoke.spread = 22.0
+	smoke.initial_velocity_min = 0.4
+	smoke.initial_velocity_max = 1.2
+	smoke.gravity = Vector3(0, 0.25, 0)
+	smoke.scale_amount_min = 0.3
+	smoke.scale_amount_max = 1.0
+	var sm := QuadMesh.new()
+	sm.size = Vector2(0.55, 0.55)
+	var smm := StandardMaterial3D.new()
+	smm.albedo_color = Color(0.56, 0.68, 0.86, 0.13)
+	smm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	sm.material = smm
+	smoke.mesh = sm
+	bk.add_child(smoke)
+	bk.add_child(damage_smoke(Vector3(0, 0.7, -0.1)))
+	return bk
 
 ## Loft helper: profile points are (z, y, half_width).
 func loft(slot: int, pts: Array, t := Transform3D(), open_edge := -1) -> void:
@@ -460,7 +632,8 @@ static func wedge_body_mesh() -> Mesh:
 		# Floor pan and dark underside.
 		b.box(P.BLACK, Vector3(0, -0.03, 0), Vector3(1.24, 0.1, 4.0), false)
 		# Canopy: copper-tinted glass running almost flush with the bonnet line.
-		b.loft(P.CAR_GLASS, [Vector3(-0.8, 0.555, 0.84), Vector3(0.05, 0.97, 0.66), Vector3(0.55, 0.99, 0.64), Vector3(0.55, 0.62, 0.85)], Transform3D(), 3)
+		# (The windscreen band itself is the Windshield node: it can break.)
+		b.kit.add_loft_open(P.CAR_GLASS, Transform3D(), PackedVector3Array([Vector3(-0.8, 0.555, 0.84), Vector3(0.05, 0.97, 0.66), Vector3(0.55, 0.99, 0.64), Vector3(0.55, 0.62, 0.85)]), PackedInt32Array([0, 3]))
 		# Roof panel and canopy frame.
 		var roof_ang := atan2(0.02, 0.5)
 		b.box_xf(P.CAR_PAINT, Transform3D(Basis(Vector3.RIGHT, -roof_ang), Vector3(0, 0.99, 0.3)), Vector3(1.2, 0.025, 0.5))

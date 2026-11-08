@@ -26,6 +26,10 @@ window/size/viewport_height=900
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[dotnet]
+
+project/assembly_name="Magadha 326-B"
+
 [layer_names]
 
 3d_physics/layer_1="world"

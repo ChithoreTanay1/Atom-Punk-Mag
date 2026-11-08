@@ -1,12 +1,13 @@
 extends Control
 ## Chanakya's war room: the strategic layer. Order agent operations against
-## governors, send the field agent to Saptavarta, end the night.
+## governors, send the field agent to a governor's seat, end the night.
 ## Design source: Arthashastra (DESIGN, not Nanda-era fact).
 
 const U = preload("res://scripts/ui_style.gd")
 
 var _state := {}
 var _selected_gov := ""
+var _mission_gov := ""
 var _hdr: Label
 var _govs: VBoxContainer
 var _ops: VBoxContainer
@@ -160,11 +161,18 @@ func refresh() -> void:
 		b.tooltip_text = o.description
 		b.disabled = o.used or int(o.cost_gold) > int(_state.gold) or int(o.cost_agents) > int(_state.agents) or (o.needs_target and _selected_gov == "") or _state.outcome != ""
 		_ops.add_child(b)
+	# A selected governor with a field mission is the target; else the next one.
 	var tgt: String = _state.mission_target
+	for g in _state.governors:
+		if g.id == _selected_gov and g.has_mission and g.status == "serving":
+			tgt = g.id
+	_mission_gov = tgt
 	var tname := ""
+	var tprov := ""
 	for g in _state.governors:
 		if g.id == tgt:
 			tname = g.name
+			tprov = g.province
 	if tgt == "":
 		_mission_btn.text = "Field operation: no target in reach"
 		_mission_btn.disabled = true
@@ -172,7 +180,7 @@ func refresh() -> void:
 		_mission_btn.text = "Field operation done tonight"
 		_mission_btn.disabled = true
 	else:
-		_mission_btn.text = "> FIELD OPERATION: Saptavarta (%s)" % tname
+		_mission_btn.text = "> FIELD OPERATION: %s (%s)" % [tprov, tname]
 		_mission_btn.disabled = _state.outcome != ""
 	_end_btn.disabled = _state.outcome != ""
 	var log := ""
@@ -221,9 +229,9 @@ func _run_op(o: Dictionary) -> void:
 	_check_outcome()
 
 func _go_mission() -> void:
-	if Game.sim.start_mission():
+	if Game.sim.start_mission_for(_mission_gov):
 		Game.mode = "campaign"
-		Game.goto("res://scenes/province.tscn")
+		Game.goto(Game.sim.mission_scene())
 
 func _end_night() -> void:
 	var lines: PackedStringArray = Game.sim.end_night()

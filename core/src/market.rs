@@ -183,6 +183,19 @@ impl Market {
         m
     }
 
+    /// A save from before a company was listed: quotes line up with companies
+    /// again, new listings start at their list price.
+    pub fn refresh_listings(&mut self, d: &MarketDef) {
+        let mut quotes = Vec::with_capacity(d.companies.len());
+        for c in &d.companies {
+            match self.quotes.iter().find(|q| q.id == c.id) {
+                Some(q) => quotes.push(q.clone()),
+                None => quotes.push(Quote { id: c.id.clone(), price: c.price, value: c.price, open: c.price, momentum: 0.0, history: vec![c.price] }),
+            }
+        }
+        self.quotes = quotes;
+    }
+
     /// Advance by real time while playing.
     pub fn advance(&mut self, d: &MarketDef, dt: f32) -> bool {
         self.acc += dt;

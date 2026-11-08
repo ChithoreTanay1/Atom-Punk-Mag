@@ -4,6 +4,7 @@
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use magadha_core::awareness::AwarenessParams;
+use magadha_core::content::FestivalDef;
 use magadha_core::injury::WoundParams;
 use magadha_core::nav::NavGraph;
 use magadha_core::tuning::Tuning;
@@ -17,6 +18,8 @@ pub struct World {
     pub alarm: bool,
     /// Dead NPCs not yet discovered: (instance id, position).
     pub corpses: Vec<(i64, [f32; 3])>,
+    /// The active mission's festival numbers (eyes and crowd read these).
+    pub festival: Option<FestivalDef>,
 }
 
 static WORLD: OnceLock<Mutex<World>> = OnceLock::new();

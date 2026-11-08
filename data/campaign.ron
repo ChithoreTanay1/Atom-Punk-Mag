@@ -30,7 +30,7 @@
         (method: Poison, stability: -12.0, heat: 5.0, loyalty_others: -3.0, paranoia_others: 6.0,
          rumor: Some("rumor_tea"),
          report: "{name} falls ill over his evening tea and does not rise. In the bazaar they say the king sent the tea."),
-        (method: Frame, stability: -17.0, heat: 3.0, loyalty_others: -9.0, paranoia_others: 14.0,
+        (method: Frame, stability: -17.0, heat: 3.0, loyalty_others: -9.0, paranoia_others: 14.0, paranoia_rival: 12.0,
          rumor: Some("rumor_purge"),
          report: "The king's inspectors find a treasonous dispatch in {name}'s tray. He is strangled on royal order. Every governor now wonders who forges letters against him."),
         (method: Failed, stability: 3.0, heat: 14.0, loyalty_others: 0.0, paranoia_others: 0.0, paranoia_target: 20.0,

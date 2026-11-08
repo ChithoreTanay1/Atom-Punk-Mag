@@ -5,20 +5,28 @@
 //! - `tuning`    every movement / vehicle / camera number, one data file
 //! - `content`   data-driven definitions (weapons, gadgets, governors, events)
 //! - `awareness` NPC detection model (stealth)
+//! - `crash`     what a crash does: injury, hull, thrown riders, windshields
 //! - `injury`    locational damage: hit zones, limps, downed bodies
 //! - `nav`       waypoint graph + A* for NPC routing
 //! - `mission`   field mission state: clock, routine, intel, methods, alarm
 //! - `campaign`  strategic layer: governors, loyalty, rumors, king's stability
 //! - `market`    the pretend stock exchange; reacts to deaths and events
+//! - `surveillance` the monitoring room: feeds, dead-feed timers, crimes on tape
+//! - `crowd`     the festival crowd: lanes, parting, panic waves, witnesses
+//! - `pursuit`   the chase after the kill
 
 pub mod awareness;
 pub mod campaign;
 pub mod content;
+pub mod crash;
+pub mod crowd;
 pub mod injury;
 pub mod market;
 pub mod mission;
 pub mod nav;
+pub mod pursuit;
 pub mod rng;
+pub mod surveillance;
 pub mod tuning;
 
 use std::path::Path;

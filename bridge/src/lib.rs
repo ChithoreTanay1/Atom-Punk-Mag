@@ -7,12 +7,21 @@
 //! - `npc`     `Npc` guards / governor / civilians
 //! - `kit`     `KitBuilder` batches primitive geometry into few draw calls
 //! - `sfx`     `SfxBank` procedural sound effects (own work, no samples)
+//! - `eye`     `Eye` Avekṣā cameras, balloons and drones
+//! - `crowd_field` `CrowdField` festival crowd drawn as one MultiMesh
+//! - `bike`    `BikeController` two-stroke motorcycle
+//! - `relief`  `ReliefBank` bakes the temple's carved wall at load time
 
 use godot::prelude::*;
 
+mod bike;
+mod crowd_field;
+mod eye;
+mod impact;
 mod kit;
 mod npc;
 mod player;
+mod relief;
 mod sfx;
 mod sim;
 mod vehicle;

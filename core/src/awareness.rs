@@ -191,9 +191,97 @@ impl Awareness {
     }
 }
 
+/// A camera or drone [INVENTED]. It has no suspicion, only a slow fill while a
+/// crime stays in frame: seen long enough is recorded. Numbers are data.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct DetectorParams {
+    pub view_distance: f32,
+    pub view_half_angle_deg: f32,
+    /// Fill per second at point-blank; falls to `far_rate` of that at range.
+    pub rate: f32,
+    pub far_rate: f32,
+    pub decay: f32,
+    /// Pan: how far either side (deg) and how fast (deg/s).
+    pub sweep_deg: f32,
+    pub sweep_speed: f32,
+    /// Patrol or drift speed for things that fly (m/s).
+    pub speed: f32,
+}
+
+impl Default for DetectorParams {
+    fn default() -> Self {
+        Self {
+            view_distance: 42.0,
+            view_half_angle_deg: 28.0,
+            rate: 1.4,
+            far_rate: 0.35,
+            decay: 0.4,
+            sweep_deg: 35.0,
+            sweep_speed: 14.0,
+            speed: 3.0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Detector {
+    pub level: f32,
+}
+
+impl Detector {
+    pub fn in_view(p: &DetectorParams, distance: f32, angle_deg: f32) -> bool {
+        distance < p.view_distance && angle_deg < p.view_half_angle_deg
+    }
+
+    /// `crime`: there is a crime in view at this distance. `exposure` 0..1 is
+    /// how visible the player is (the press of the crowd lowers it). Returns
+    /// true on the moment the crime goes on tape.
+    pub fn update(&mut self, p: &DetectorParams, dt: f32, crime: Option<f32>, exposure: f32) -> bool {
+        match crime {
+            Some(d) => {
+                let t = (d / p.view_distance.max(1.0)).clamp(0.0, 1.0);
+                let rate = p.rate * (1.0 + (p.far_rate - 1.0) * t) * exposure.clamp(0.1, 1.0);
+                self.level += rate * dt;
+                if self.level >= 1.0 {
+                    self.level = 0.0;
+                    return true;
+                }
+            }
+            None => self.level = (self.level - p.decay * dt).max(0.0),
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detector_records_a_crime_it_keeps_seeing_and_forgets_otherwise() {
+        let p = DetectorParams { rate: 1.0, far_rate: 0.5, decay: 1.0, ..Default::default() };
+        let mut d = Detector::default();
+        let mut on_tape = false;
+        for _ in 0..30 { on_tape |= d.update(&p, 0.1, Some(1.0), 1.0); }
+        assert!(on_tape);
+        d.level = 0.5;
+        for _ in 0..10 { assert!(!d.update(&p, 0.1, None, 1.0)); }
+        assert_eq!(d.level, 0.0);
+    }
+
+    #[test]
+    fn the_crowd_and_range_slow_a_detector_down() {
+        let p = DetectorParams::default();
+        let time = |dist: f32, exposure: f32| {
+            let mut d = Detector::default();
+            let mut t = 0.0;
+            while !d.update(&p, 0.01, Some(dist), exposure) && t < 60.0 { t += 0.01; }
+            t
+        };
+        assert!(time(5.0, 1.0) < time(40.0, 1.0));
+        assert!(time(5.0, 1.0) < time(5.0, 0.3));
+    }
 
     fn sight(distance: f32, hostile: bool, crouched: bool) -> Sighting {
         Sighting { distance, angle_deg: 5.0, crouched, moving_fast: false, exposure: 1.0, hostile, position: [0.0; 3] }

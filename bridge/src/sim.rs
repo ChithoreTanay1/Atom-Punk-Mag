@@ -9,6 +9,7 @@ use magadha_core::campaign::{Campaign, GovStatus};
 use magadha_core::content::{Content, GadgetKind, Method};
 use magadha_core::market::{eighths, Market, MarketDef};
 use magadha_core::mission::{Mission, MissionEvent, TargetStatus};
+use magadha_core::surveillance::SurveillanceEvent;
 use magadha_core::tuning::Tuning;
 
 use crate::world::{v3, world};
@@ -138,6 +139,8 @@ impl GameSim {
             "movement" => w.tuning.movement = d.movement,
             "camera" => w.tuning.camera = d.camera,
             "vehicle" => w.tuning.vehicle = d.vehicle,
+            "bike" => w.tuning.bike = d.bike,
+            "crash" => w.tuning.crash = d.crash,
             _ => {}
         }
     }
@@ -229,6 +232,9 @@ impl GameSim {
         match Campaign::from_ron(&t) {
             Ok(mut c) => {
                 self.market = c.market.take().or_else(|| self.market_def.as_ref().map(|d| Market::new(d, c.seed)));
+                // A save from before a listing or a mission existed keeps working.
+                if let (Some(m), Some(d)) = (&mut self.market, &self.market_def) { m.refresh_listings(d); }
+                if let Some(content) = &self.content { c.refresh_from_content(content); }
                 self.campaign = Some(c);
                 true
             }
@@ -242,7 +248,9 @@ impl GameSim {
         let mut govs = VarArray::new();
         for g in &cs.governors {
             let rival_name = g.rival.as_ref().and_then(|r| cs.gov(r)).map(|r| r.name.clone()).unwrap_or_default();
+            let mission_scene = g.mission.as_ref().and_then(|m| c.mission(m)).map(|m| m.scene.clone()).unwrap_or_default();
             let d = vdict! {
+                "mission_scene" => mission_scene.as_str(),
                 "id" => g.id.as_str(), "name" => g.name.as_str(), "title" => g.title.as_str(),
                 "province" => g.province.as_str(), "loyalty" => g.loyalty, "paranoia" => g.paranoia,
                 "ambition" => g.ambition, "troops" => g.troops, "discord" => g.discord,
@@ -327,12 +335,178 @@ impl GameSim {
         } else {
             return false;
         };
-        self.mission = Mission::new(c, &mission_id, paranoia);
-        self.mission_gov = Some(gov_id);
+        self.begin_mission(&gov_id, paranoia, &mission_id)
+    }
+
+    /// Start the mission against one named governor (the war room's choice,
+    /// or a free-play menu item).
+    #[func]
+    fn start_mission_for(&mut self, gov: GString) -> bool {
+        let id = gov.to_string();
+        let Some(c) = &self.content else { return false };
+        let found = self.campaign.as_ref().and_then(|cs| cs.gov(&id).map(|g| (g.paranoia, g.mission.clone())))
+            .or_else(|| c.governor(&id).map(|g| (g.paranoia, g.mission.clone())));
+        let Some((paranoia, Some(mission_id))) = found else { return false };
+        self.begin_mission(&id, paranoia, &mission_id)
+    }
+
+    fn begin_mission(&mut self, gov_id: &str, paranoia: f32, mission_id: &str) -> bool {
+        let Some(c) = &self.content else { return false };
+        self.mission = Mission::new(c, mission_id, paranoia);
+        self.mission_gov = Some(gov_id.to_string());
+        let festival = self.mission.as_ref().and_then(|m| m.def.festival.clone());
         let mut w = world();
         w.alarm = false;
         w.corpses.clear();
+        w.festival = festival;
         self.mission.is_some()
+    }
+
+    /// The scene of the active mission.
+    #[func]
+    fn mission_scene(&self) -> GString {
+        match self.mission.as_ref().map(|m| m.def.scene.as_str()) {
+            Some(x) if !x.is_empty() => s(x),
+            _ => s("res://scenes/province.tscn"),
+        }
+    }
+
+    /// Dry dispatch line for the debrief ("" if the mission has none).
+    #[func]
+    fn mission_dispatch(&self, method: GString) -> GString {
+        self.mission.as_ref().and_then(|m| m.dispatch_for(method_from(&method.to_string()))).map(s).unwrap_or_default()
+    }
+
+    // ---- Surveillance ------------------------------------------------------
+
+    #[func]
+    fn sv_add_feed(&mut self, id: GString, zone: GString) {
+        if let Some(v) = self.mission.as_mut().and_then(|m| m.surveillance.as_mut()) { v.add_feed(&id.to_string(), &zone.to_string()); }
+    }
+
+    #[func]
+    fn sv_loop_zone(&mut self, zone: GString) {
+        if let Some(v) = self.mission.as_mut().and_then(|m| m.surveillance.as_mut()) { v.loop_zone(&zone.to_string()); }
+    }
+
+    /// Breaker panel: returns true if the zone is now dark.
+    #[func]
+    fn sv_toggle_power(&mut self, zone: GString) -> bool {
+        self.mission.as_mut().and_then(|m| m.surveillance.as_mut()).map(|v| v.toggle_power(&zone.to_string())).unwrap_or(false)
+    }
+
+    #[func]
+    fn sv_restore_zone(&mut self, zone: GString) {
+        if let Some(v) = self.mission.as_mut().and_then(|m| m.surveillance.as_mut()) { v.restore_zone(&zone.to_string()); }
+    }
+
+    #[func]
+    fn sv_pull(&mut self, id: GString) {
+        if let Some(v) = self.mission.as_mut().and_then(|m| m.surveillance.as_mut()) { v.pull(&id.to_string()); }
+    }
+
+    #[func]
+    fn sv_jam(&mut self, id: GString, secs: f32) {
+        if let Some(v) = self.mission.as_mut().and_then(|m| m.surveillance.as_mut()) { v.jam(&id.to_string(), secs); }
+    }
+
+    #[func]
+    fn sv_destroy(&mut self, id: GString) {
+        if let Some(v) = self.mission.as_mut().and_then(|m| m.surveillance.as_mut()) { v.destroy(&id.to_string()); }
+    }
+
+    /// A crime goes on tape. Returns false if the feed was not recording.
+    #[func]
+    fn sv_record(&mut self, id: GString, kill: bool) -> bool {
+        self.mission.as_mut().map(|m| m.record_crime(&id.to_string(), kill)).unwrap_or(false)
+    }
+
+    #[func]
+    fn sv_reassign(&mut self, zone: GString) {
+        if let Some(v) = self.mission.as_mut().and_then(|m| m.surveillance.as_mut()) { v.reassign(&zone.to_string()); }
+    }
+
+    #[func]
+    fn sv_set_staffed(&mut self, on: bool) {
+        if let Some(v) = self.mission.as_mut().and_then(|m| m.surveillance.as_mut()) { v.set_staffed(on); }
+    }
+
+    #[func]
+    fn sv_feed_live(&self, id: GString) -> bool {
+        self.mission.as_ref().and_then(|m| m.surveillance.as_ref()).map(|v| v.feed_live(&id.to_string())).unwrap_or(false)
+    }
+
+    #[func]
+    fn sv_zone_dark(&self, zone: GString) -> bool {
+        self.mission.as_ref().and_then(|m| m.surveillance.as_ref()).map(|v| v.zone_dark(&zone.to_string())).unwrap_or(false)
+    }
+
+    #[func]
+    fn sv_zone_reassigned(&self, zone: GString) -> bool {
+        self.mission.as_ref().and_then(|m| m.surveillance.as_ref()).map(|v| v.zone_reassigned(&zone.to_string())).unwrap_or(false)
+    }
+
+    /// For the HUD: feeds live, feeds total, crimes on tape, and the dark zone
+    /// closest to being noticed.
+    #[func]
+    fn sv_state(&self) -> VarDictionary {
+        let Some(v) = self.mission.as_ref().and_then(|m| m.surveillance.as_ref()) else { return VarDictionary::new() };
+        let (zone, secs) = v.next_notice().unwrap_or((String::new(), 0.0));
+        vdict! {
+            "live" => v.live_count() as i64, "total" => v.feeds.len() as i64, "recorded" => v.recorded as i64,
+            "next_zone" => zone.as_str(), "next_secs" => secs, "heat" => v.heat, "staffed" => v.staffed,
+        }
+    }
+
+    // ---- Pursuit -----------------------------------------------------------
+
+    #[func]
+    fn pursuit_params(&self) -> VarDictionary {
+        let Some(p) = self.mission.as_ref().and_then(|m| m.pursuit.as_ref()).map(|p| &p.params) else { return VarDictionary::new() };
+        vdict! {
+            "sight_range" => p.sight_range, "bike_speed" => p.bike_speed, "spawn_behind" => p.spawn_behind,
+            "shot_range" => p.shot_range, "shot_interval" => p.shot_interval, "shot_damage" => p.shot_damage,
+            "shot_hit_chance" => p.shot_hit_chance, "road_first_chunk" => p.road_first_chunk as i64,
+            "safehouse_chunk" => p.safehouse_chunk as i64, "lose_seconds" => p.lose_seconds,
+        }
+    }
+
+    /// Start the chase. Returns { "bikes": n, "drones": n }.
+    #[func]
+    fn pursuit_start(&mut self) -> VarDictionary {
+        let (b, d) = self.mission.as_mut().map(|m| m.start_pursuit()).unwrap_or((0, 0));
+        vdict! { "bikes" => b as i64, "drones" => d as i64 }
+    }
+
+    #[func]
+    fn pursuit_tick(&mut self, dt: f32, seen: bool) {
+        if let Some(m) = &mut self.mission { m.pursuit_tick(dt, seen); }
+    }
+
+    #[func]
+    fn pursuit_active(&self) -> bool {
+        self.mission.as_ref().and_then(|m| m.pursuit.as_ref()).is_some_and(|p| p.active())
+    }
+
+    #[func]
+    fn pursuit_unseen(&self) -> f32 {
+        self.mission.as_ref().and_then(|m| m.pursuit.as_ref()).map(|p| p.unseen).unwrap_or(0.0)
+    }
+
+    #[func]
+    fn reach_safehouse(&mut self) {
+        if let Some(m) = &mut self.mission { m.reach_safehouse(); }
+    }
+
+    /// Bystanders crushed so far (the level reports the running total).
+    #[func]
+    fn report_crushed(&mut self, total: i64) {
+        if let Some(m) = &mut self.mission { m.crushed = total.max(0) as u32; }
+    }
+
+    #[func]
+    fn report_bystander(&mut self) {
+        if let Some(m) = &mut self.mission { m.bystanders += 1; }
     }
 
     #[func]
@@ -379,6 +553,16 @@ impl GameSim {
                 MissionEvent::TargetDying => vdict! { "type" => "target_dying" },
                 MissionEvent::Message(t) => vdict! { "type" => "message", "text" => t.as_str() },
                 MissionEvent::Finished { method } => vdict! { "type" => "finished", "method" => method_name(method) },
+                MissionEvent::PursuitOver { lost } => vdict! { "type" => "pursuit_over", "lost" => lost },
+                MissionEvent::Feed(f) => match f {
+                    SurveillanceEvent::FeedChanged { id, live } => vdict! { "type" => "feed_changed", "id" => id.as_str(), "live" => live },
+                    SurveillanceEvent::Noticed { zone } => vdict! { "type" => "feed_noticed", "zone" => zone.as_str() },
+                    SurveillanceEvent::Destroyed { id, zone } => vdict! { "type" => "feed_destroyed", "id" => id.as_str(), "zone" => zone.as_str() },
+                    SurveillanceEvent::Recorded { id, zone, kill } => vdict! { "type" => "recorded", "id" => id.as_str(), "zone" => zone.as_str(), "kill" => kill },
+                    SurveillanceEvent::RecordAlarm => vdict! { "type" => "record_alarm" },
+                    SurveillanceEvent::Reassigned { zone } => vdict! { "type" => "reassigned", "zone" => zone.as_str() },
+                    SurveillanceEvent::ReassignEnded { zone } => vdict! { "type" => "reassign_ended", "zone" => zone.as_str() },
+                },
             };
             out.push(&d.to_variant());
         }
@@ -545,7 +729,8 @@ impl GameSim {
     #[func]
     fn apply_mission_result(&mut self, method: GString) -> GString {
         let (Some(c), Some(cs), Some(gov)) = (&self.content, &mut self.campaign, &self.mission_gov) else { return GString::new() };
-        let text = cs.apply_mission(c, gov, method_from(&method.to_string()));
+        let extra = self.mission.as_ref().map(|m| m.extra_heat()).unwrap_or(0.0);
+        let text = cs.apply_mission(c, gov, method_from(&method.to_string()), extra);
         let key = format!("removed:{gov}");
         self.mission = None;
         if method.to_string() != "failed" {

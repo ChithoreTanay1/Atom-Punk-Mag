@@ -14,9 +14,13 @@ render_mode unshaded;
 uniform sampler2D screen_tex : hint_screen_texture, filter_nearest, repeat_disable;
 uniform float vignette = 0.32;
 uniform float grain = 0.03;
-uniform float saturation = 0.86;
-uniform vec3 shadow_tint = vec3(0.14, 0.2, 0.21);
-uniform float shadow_tint_amount = 0.08;
+uniform float saturation = 1.06;
+// Split tone, multiplied in rather than added so blacks stay black: cold
+// petrol in the shadows, warm in the lights. Gloom comes from hue and depth;
+// an additive lift only turns the whole frame grey.
+uniform vec3 shadow_tint = vec3(0.9, 0.98, 1.05);
+uniform vec3 light_tint = vec3(1.05, 1.0, 0.93);
+uniform float contrast = 0.22;
 uniform float damage = 0.0;
 
 // PSX
@@ -73,7 +77,9 @@ void fragment() {
 	vec3 c = texture(screen_tex, uv).rgb;
 	float l = dot(c, vec3(0.299, 0.587, 0.114));
 	c = mix(vec3(l), c, saturation);
-	c = mix(c, c + shadow_tint * shadow_tint_amount, 1.0 - smoothstep(0.0, 0.5, l));
+	c *= mix(shadow_tint, light_tint, smoothstep(0.06, 0.6, l));
+	c = clamp(c, 0.0, 1.0);
+	c = mix(c, c * c * (3.0 - 2.0 * c), contrast);
 	vec2 d = SCREEN_UV - 0.5;
 	c *= 1.0 - dot(d, d) * vignette * 2.2;
 	c = mix(c, vec3(0.42, 0.13, 0.12), damage * smoothstep(0.15, 0.7, length(d)) * 0.7);

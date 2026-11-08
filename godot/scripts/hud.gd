@@ -492,6 +492,9 @@ func _process(dt: float) -> void:
 		_clock.text = "%s   %s" % [st.clock, "ALARM" if alarm else ""]
 		var obj: PackedStringArray = st.objectives
 		_objectives.text = "\n".join(Array(obj).map(func(o): return "> " + o))
+		if level and level.has_method("hud_lines"):
+			for l: String in level.hud_lines():
+				_objectives.text += "\n" + l
 	else:
 		_clock.text = "FEEL TEST"
 		_objectives.text = "> Movement and driving tuning track\n> F1 tuning panel, E to enter the car"
@@ -500,12 +503,21 @@ func _process(dt: float) -> void:
 		var c: ArcadeCar = level.car
 		var g2 := c.get_gear()
 		_drive.text = "%3d KM/H  %s  %4d RPM" % [int(c.get_speed() * 3.6), "R" if g2 < 0 else str(g2), int(c.get_rpm())]
+		if c.get_hull() < 0.35:
+			_drive.text = ("ENGINE DEAD  " if c.get_hull() <= 0.0 else "DAMAGED  ") + _drive.text
+		if c.flat_tyres() > 0:
+			_drive.text = "%d FLAT  " % c.flat_tyres() + _drive.text
+	if level and "riding" in level and level.riding and level.bike:
+		var mb: BikeController = level.bike
+		_drive.text = "%3d KM/H  %d  %5d RPM%s" % [int(mb.get_speed() * 3.6), mb.get_gear(), int(mb.get_rpm()), "  ON THE PIPE" if mb.get_on_pipe() > 0.6 else ""]
+		if mb.flat_tyres() > 0:
+			_drive.text = "%d FLAT  " % mb.flat_tyres() + _drive.text
 	_arcs.queue_redraw()
 
 func _draw_arcs() -> void:
-	if player == null or not player.enabled:
+	if player == null or (not player.enabled and rig.in_vehicle == null):
 		return
-	var cam := player.get_camera()
+	var cam := rig.active_cam()
 	var centre := _arcs.size * 0.5
 	# Crosshair: four ticks placed at the true spread cone, a dot, hit marker.
 	var half_fov := deg_to_rad(cam.fov * 0.5)

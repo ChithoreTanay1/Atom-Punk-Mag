@@ -29,7 +29,11 @@ static func style(kind: String, tint: int) -> Dictionary:
 	var st := {"cloth": P.GUARD, "lower": P.CHARCOAL, "accent": P.BURGUNDY, "boot": P.BLACK, "hand": P.SKIN, "hair": P.BLACK}
 	match kind:
 		"guard":
-			if tint % 2 == 1:
+			if tint == 2:
+				# Avekṣā Corp [INVENTED]: petrol fatigues, amber armband, soft
+				# leather kit. Security contractors, not soldiers: no plate.
+				st = {"cloth": P.PETROL, "lower": P.CHARCOAL, "accent": P.VISOR, "boot": P.BLACK, "hand": P.BLACK, "hair": P.BLACK}
+			elif tint % 2 == 1:
 				st = {"cloth": P.CARBON, "lower": P.CARBON, "accent": P.CAPE, "boot": P.BLACK, "hand": P.BLACK, "hair": P.BLACK, "elite": true}
 			else:
 				st = {"cloth": P.TUNIC, "lower": P.CHARCOAL, "accent": P.LEATHER, "boot": P.LEATHER, "hand": P.LEATHER, "hair": P.BLACK, "plate": true}
@@ -37,6 +41,10 @@ static func style(kind: String, tint: int) -> Dictionary:
 			st = {"cloth": P.CAPE, "lower": P.CHARCOAL, "accent": P.BRASS, "boot": P.LEATHER, "hand": P.BLACK, "hair": P.WARM_GREY, "robe": true}
 		"courier":
 			st = {"cloth": P.TERRACOTTA, "lower": P.WARM_GREY, "accent": P.CHARCOAL, "boot": P.BLACK, "hand": P.SKIN, "hair": P.BLACK, "bag": true}
+		"civilian" when tint >= 100:
+			# A festival pilgrim: the crowd's robes, up close.
+			var robe: int = [P.LEATHER, P.IVORY, P.BURGUNDY, P.TERRACOTTA, P.PETROL][(tint - 100) % 5]
+			st = {"cloth": robe, "lower": robe, "accent": P.BEIGE, "boot": P.BLACK, "hand": P.SKIN, "hair": P.BLACK, "robe": true}
 		"civilian":
 			st = {"cloth": [P.WARM_GREY, P.TEAL, P.IVORY, P.TERRACOTTA, P.PETROL][tint % 5],
 				"lower": [P.CHARCOAL, P.WARM_GREY, P.PETROL][tint % 3], "accent": P.BEIGE, "boot": P.BLACK, "hand": P.SKIN,
@@ -296,9 +304,9 @@ static func part_mesh(part: String, kind: String, tint: int, side: int) -> Mesh:
 static func style_key(kind: String, tint: int) -> int:
 	match kind:
 		"guard":
-			return tint % 2
+			return 2 if tint == 2 else tint % 2
 		"civilian":
-			return tint % 30
+			return tint if tint >= 100 else tint % 30
 	return 0
 
 ## The guards' rifle: AK-pattern, walnut and charcoal, long suppressor, a

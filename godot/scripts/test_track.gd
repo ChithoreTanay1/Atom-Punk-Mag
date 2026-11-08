@@ -43,6 +43,8 @@ func build_world() -> void:
 	# the viaduct (chunk -1 is a ramp-up chunk; its foot is at z = 0).
 	spawn_car(Vector3(31.0, 1.0, 34.0), 0.0, Color("#2F6E73"))
 	car = spawn_car(Vector3(-13.3, 1.0, 60.0), 0.0)
+	# The Shikra, for tuning the two-stroke on the same road.
+	spawn_bike(Vector3(-16.6, 0.6, 58.0), 0.0)
 	var layer := CanvasLayer.new()
 	layer.layer = 9
 	add_child(layer)
@@ -128,16 +130,16 @@ func _build_handling_pad(parent: Node3D) -> void:
 
 func _apply_dusk(t: float) -> void:
 	P.set_dusk(t)
-	sun.light_energy = lerpf(0.62, 0.16, t)
-	sun.light_color = Color("#E3DACB").lerp(Color("#B9AE9E"), t)
+	sun.light_energy = lerpf(0.72, 0.2, t)
+	sun.light_color = Color("#EFCFA8").lerp(Color("#D9A880"), t)
 	# Keep the sun high: the reference is overcast, with no long hard shadows.
 	sun.rotation_degrees.x = lerpf(-32.0, -48.0, t)
 	sun.shadow_blur = 3.0
-	env.ambient_light_energy = lerpf(0.62, 0.38, t)
-	sky_mat.sky_top_color = Color("#5C6669").lerp(Color("#25333B"), t)
-	sky_mat.sky_horizon_color = Color("#8E9699").lerp(Color("#5A6A74"), t)
-	sky_mat.ground_horizon_color = Color("#8C9091").lerp(Color("#4A5760"), t)
-	base_fog_color = Color("#848D90").lerp(Color("#53616A"), t)
+	env.ambient_light_energy = lerpf(0.58, 0.48, t)
+	sky_mat.sky_top_color = Color("#3E4D55").lerp(Color("#22333D"), t)
+	sky_mat.sky_horizon_color = Color("#7A8A91").lerp(Color("#566B75"), t)
+	sky_mat.ground_horizon_color = Color("#63737A").lerp(Color("#44555F"), t)
+	base_fog_color = Color("#66767E").lerp(Color("#44596A"), t)
 	env.fog_light_color = base_fog_color
 
 func _build_ships() -> void:
@@ -158,6 +160,8 @@ func _build_ships() -> void:
 # ------------------------------------------------------------- per frame
 
 func _focus() -> Vector3:
+	if riding and bike:
+		return bike.global_position
 	return car.global_position if driving and car else player.global_position
 
 func _process(dt: float) -> void:
@@ -181,8 +185,132 @@ func _process(dt: float) -> void:
 		weather.indoor = under
 		rain.emitting = not under and weather.mode != "clear"
 
+## `--vt=glass0|glass1|glass2|ride|crash|carcrash`: drives the vehicle flows with
+## no input and prints what happened. Used to check them; not reachable in play.
+var _vt_t := 0.0
+var _vt_step := 0
+
+func _vt(dt: float) -> void:
+	_vt_t += dt
+	var kind := str(Game.debug.vt)
+	if _vt_step == 0 and _vt_t > 1.0:
+		_vt_step = 1
+		if kind.begins_with("crash") or kind == "carcrash":
+			var w := StaticBody3D.new()
+			var cs := CollisionShape3D.new()
+			var bs := BoxShape3D.new()
+			bs.size = Vector3(30, 8, 2)
+			cs.shape = bs
+			w.add_child(cs)
+			w.position = Vector3(-13, 4, -80)
+			add_child(w)
+		if kind.begins_with("glass") or kind == "carcrash":
+			enter_car(car)
+		elif not kind.begins_with("tyre") and kind != "dent" and kind != "traffic" and kind != "parked":
+			var bs2: BikeController = get_tree().get_nodes_in_group("bikes")[0]
+			enter_bike(bs2)
+		if kind == "ride" or kind.begins_with("crash") or kind == "carcrash":
+			Input.action_press("move_forward")
+		if kind.begins_with("glass") or kind == "ride":
+			rig.set_drawn(true)
+	if kind == "parked" and _vt_step == 1:
+		_vt_step = 2
+		player.global_position = car.global_position + Vector3(-2.4, 0.3, -3.2)
+		var seen: Vector3 = car.global_position - player.global_position
+		player.set_look(atan2(-seen.x, -seen.z), -0.12)
+	elif kind == "dent":
+		_vt_dent()
+	elif kind == "traffic":
+		_vt_traffic()
+	elif kind.begins_with("tyre"):
+		_vt_tyre(kind, dt)
+	if kind.begins_with("glass") and _vt_step >= 1 and _vt_step <= int(kind.substr(5)) and _vt_t > 1.5 + _vt_step * 0.6:
+		_vt_step += 1
+		rig._fire()
+		print("vt: fired, glass state ", car.windshield_state())
+	if kind == "ride" and _vt_t > 2.0 and fmod(_vt_t, 2.0) < dt:
+		print("vt: true speed %.1f km/h, rpm %d gear %d, hud '%s'" % [bike.linear_velocity.length() * 3.6, int(bike.get_rpm()), bike.get_gear(), hud._drive.text])
+		if _vt_t > 4.0 and rig.drawn:
+			rig._fire()
+	if (kind.begins_with("crash") or kind == "carcrash") and fmod(_vt_t, 1.0) < dt:
+		var v: RigidBody3D = car if driving or bike == null else bike
+		print("vt: t=%d z=%.0f speed %.1f riding=%s driving=%s thrown=%s player=%s hull=%.2f glass=%d" % [int(_vt_t), v.global_position.z, v.linear_velocity.length() * 3.6, str(riding), str(driving), str(_thrown != null), str(player.enabled), v.get_hull(), car.windshield_state()])
+
+func _vt_dent() -> void:
+	if _vt_step == 1:
+		_vt_step = 2
+		var w := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(1.2, 4, 1.2)
+		cs.shape = bs
+		w.add_child(cs)
+		w.position = Vector3(-14.4, 2, 40)
+		add_child(w)
+		car.global_position = Vector3(-13.3, 0.6, 58)
+		car.linear_velocity = Vector3(0, 0, -24)
+		car.sleeping = false
+	if _vt_step == 2 and car.get_hull() < 1.0:
+		_vt_step = 3
+		print("vt: dent at %s push %s hull %.2f" % [str(car.get_impact_point()), str(car.get_impact_push()), car.get_hull()])
+		print("vt: dent frame time %.1f ms" % (Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0))
+	if _vt_step == 3 and _vt_t > 4.0:
+		_vt_step = 4
+		var at: Vector3 = car.tyre_pos(0)
+		rig._check_tyres(at + Vector3(-6, 0.1, 0), at + Vector3(1, 0, 0))
+		print("vt: tyre shot flats=%d; car at %s" % [car.flat_tyres(), str(car.global_position)])
+		player.global_position = car.global_position + Vector3(-2.4, 0.3, -3.2)
+		var to: Vector3 = car.global_position - player.global_position
+		player.set_look(atan2(-to.x, -to.z), -0.12)
+
+func _vt_traffic() -> void:
+	if traffic.cars.is_empty():
+		return
+	var c: Dictionary = traffic.cars[0]
+	if _vt_step == 1:
+		_vt_step = 2
+		var body: Node3D = c.body
+		var at: Vector3 = body.global_transform * Vector3(0.8, 0.32, 1.38)
+		var hit: Vector3 = traffic.shoot_tyres(at + Vector3(6, 0, 0), at - Vector3(1, 0, 0))
+		print("vt: traffic shot hit=%s pref=%.1f" % [str(not is_nan(hit.x)), c.pref])
+	if fmod(_vt_t, 1.5) < get_physics_process_delta_time():
+		print("vt: traffic v=%.1f" % c.v)
+
+func _vt_tyre(kind: String, _dt: float) -> void:
+	var v: Node3D = car if kind.ends_with("car") else get_tree().get_nodes_in_group("bikes")[0]
+	if _vt_step == 1:
+		_vt_step = 2
+		if kind.begins_with("tyres"):
+			# Through the real shot path: a line straight at the left front wheel.
+			var at: Vector3 = v.tyre_pos(1 if v == car else 0)
+			rig._check_tyres(at + Vector3(6, 0.1, 0), at - Vector3(1, 0, 0))
+			print("vt: shot; flats=%d pressure=%.2f" % [v.flat_tyres(), v.tyre_pressure(0)])
+	if _vt_step == 2 and _vt_t > 3.0:
+		_vt_step = 3
+		if driving:
+			pass
+		elif v == car:
+			enter_car(car)
+		else:
+			enter_bike(v)
+		Input.action_press("move_forward")
+	if fmod(_vt_t, 1.5) < get_physics_process_delta_time():
+		print("vt: t=%.0f speed %.0f km/h x=%.2f pressure=%.2f y=%.2f" % [_vt_t, v.get_speed() * 3.6, v.global_position.x, v.tyre_pressure(1 if v == car else 0), v.global_position.y])
+
+func _on_bike_crash(b: BikeController, dv: float, injury: float, eject: bool) -> void:
+	if Game.debug.has("vt"):
+		print("vt: BIKE CRASH dv=%.1f injury=%.1f eject=%s" % [dv, injury, str(eject)])
+	super(b, dv, injury, eject)
+
+func _on_car_crash(c: ArcadeCar, dv: float, injury: float, glass: int) -> void:
+	if Game.debug.has("vt"):
+		print("vt: CAR CRASH dv=%.1f injury=%.1f glass_hits=%d" % [dv, injury, glass])
+	super(c, dv, injury, glass)
+
 func _physics_process(dt: float) -> void:
 	super(dt)
+	if Game.debug.has("vt"):
+		_vt(dt)
 	var f := _focus()
 	if absf(f.z) > REBASE:
 		_rebase(Expressway.L * roundf(f.z / Expressway.L))

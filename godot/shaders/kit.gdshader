@@ -3,7 +3,9 @@
 // pattern: 0 plain, 1 concrete (formwork panels, streaks), 2 walnut,
 // 3 marble, 4 geometric carpet, 5 brushed steel panels, 6 foliage,
 // 7 road / paving (wet), 8 fabric, 9 lit windows (facade glass grid),
-// 10 asphalt (lane wheel tracks, patches, cracks), 11 jali (pierced screen)
+// 10 asphalt (lane wheel tracks, patches, cracks), 11 jali (pierced screen),
+// 12 basalt (strata and cracks), 13 dressed stone courses, 14 carved relief
+// (the baked wall texture from bridge/src/relief.rs)
 shader_type spatial;
 render_mode diffuse_lambert, specular_schlick_ggx;
 
@@ -24,6 +26,11 @@ uniform float grime : hint_range(0.0, 1.0) = 0.0;
 // Asphalt (pattern 10): lanes run along Z, starting lane_offset from x = 0.
 uniform float lane_offset = 1.6;
 uniform float lane_width = 3.6;
+// Carved relief (pattern 14): rgb cavity shade (or glow colour), a = glow;
+// normal rg = slope. One tile covers relief_tile metres.
+uniform sampler2D relief_albedo : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D relief_normal : filter_linear_mipmap, repeat_enable;
+uniform float relief_tile = 12.0;
 
 global uniform float weather_wet;
 global uniform float weather_snow;
@@ -162,6 +169,51 @@ void fragment() {
 		col = mix(col, vec3(0.06, 0.065, 0.07), hole);
 		emis *= hole * (0.6 + hash(floor(uv * 0.25)) * 0.8);
 		rough = mix(0.85, 0.95, hole);
+	} else if (pattern == 12) {
+		// Basalt: dark columnar strata, fine cracks, mossy where it faces up.
+		float strata = vnoise(vec2(wpos.x * 0.07 + wpos.z * 0.09, wpos.y * 1.3 + vnoise(wpos.xz * 0.2) * 2.5));
+		float fine = vnoise(uv * 6.0) * 0.5 + vnoise(uv * 23.0) * 0.3 + vnoise(uv * 71.0) * 0.2;
+		float crack = smoothstep(0.03, 0.0, abs(vnoise(uv * 1.3 + wpos.y * 0.1) - 0.5));
+		col *= 0.62 + strata * 0.55 + fine * 0.28;
+		col *= 1.0 - crack * 0.55;
+		if (up_facing) {
+			col = mix(col, accent.rgb, smoothstep(0.45, 0.8, vnoise(wpos.xz * 0.6)) * 0.55);
+		}
+		rough = clamp(rough + (fine - 0.5) * 0.2, 0.0, 1.0);
+		vec3 bump = vec3(vnoise(uv * 3.1) - 0.5, (strata - 0.5) * 0.9, vnoise(uv * 3.7 + 5.0) - 0.5);
+		NORMAL = normalize(NORMAL + (VIEW_MATRIX * vec4(bump * 0.5, 0.0)).xyz);
+	} else if (pattern == 13) {
+		// Dressed stone: courses of blocks with tooled faces and dark joints.
+		float course = floor(wpos.y / 0.9);
+		float along = up_facing ? uv.y : uv.x;
+		float off = mod(course, 2.0) * 0.75;
+		float bx = fract((along + off) / 1.5);
+		float by = fract(wpos.y / 0.9);
+		if (up_facing) {
+			bx = fract(uv.x / 1.5 + mod(floor(uv.y / 1.5), 2.0) * 0.5);
+			by = fract(uv.y / 1.5);
+			course = floor(uv.y / 1.5);
+		}
+		float joint = smoothstep(0.022, 0.0, min(min(bx, 1.0 - bx), min(by, 1.0 - by)));
+		float block = hash(vec2(floor((along + off) / 1.5), course));
+		float tool = vnoise(uv * 14.0) * 0.5 + vnoise(uv * 47.0) * 0.5;
+		col *= (0.78 + block * 0.3) * (0.84 + tool * 0.26);
+		col *= 1.0 - joint * 0.62;
+		rough = 0.8 + joint * 0.2;
+	} else if (pattern == 14) {
+		vec2 ruv = vec2(uv.x, -uv.y) / relief_tile;
+		vec4 ra = texture(relief_albedo, ruv);
+		vec2 slope = texture(relief_normal, ruv).rg * 2.0 - 1.0;
+		float glow = ra.a;
+		float weather_n = vnoise(uv * 1.1) * 0.5 + vnoise(uv * 9.0) * 0.35 + vnoise(uv * 37.0) * 0.15;
+		col = mix(col * ra.rgb * 1.5 * (0.76 + weather_n * 0.42), ra.rgb * 0.2, glow);
+		emis = ra.rgb * glow * emission_energy;
+		rough = mix(rough, 0.35, glow);
+		// Slope to a world-space normal: x runs along the wall, y up it.
+		vec3 wa = abs(wnrm);
+		vec3 t = wa.x > wa.z ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+		vec3 wn = normalize(wnrm - t * slope.x * 2.2 - vec3(0.0, 1.0, 0.0) * slope.y * 2.2);
+		NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
 	}
 
 	// Grime: dirt creeping up from the ground, darker under ledges.

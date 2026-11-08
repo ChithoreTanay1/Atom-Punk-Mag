@@ -98,7 +98,105 @@ var _hook_body: NpcBody      # the hook is flying at / stuck in this body
 var _hook_bone := "UpperChest"
 var _latched: NpcBody        # line made fast to a person
 var _tether := {}            # {body, at, t}: the person is flying into `at`
+var _hook_drone: Node3D      # the hook is flying at this drone
+var _latched_drone: Node3D   # the hook is in this drone
+var _wreck_line := {}        # {wreck, at, t}: the drone is being dragged down
 var _winch: AudioStreamPlayer
+
+# ------------------------------------------------------------- from a vehicle
+
+## The car or bike being shot from, the view that is live, and who takes the
+## recoil. The view model rides on that camera; the player is parked.
+var in_vehicle: RigidBody3D
+var _view_cam: Camera3D
+var _view_node: Node
+var _vm_off := false
+
+func enter_vehicle(v: RigidBody3D, view: Camera3D, kick: Node, show_gun: bool) -> void:
+	in_vehicle = v
+	_view_cam = view
+	_view_node = kick
+	_vm_off = not show_gun
+	_vm.reparent(view, false)
+	_vm.visible = drawn and show_gun
+	# Knife and line stay on the belt: only guns come out in a vehicle.
+	if _kind() != "gun":
+		for i in loadout.size():
+			if str(loadout[i].def.get("kind", "gun")) == "gun":
+				_equip(i, true)
+				break
+
+func leave_vehicle() -> void:
+	if in_vehicle == null:
+		return
+	if _view_node and "hold_look" in _view_node:
+		_view_node.set("hold_look", false)
+	_view_cam.h_offset = 0.0
+	_view_cam.v_offset = 0.0
+	in_vehicle = null
+	_view_cam = null
+	_view_node = null
+	_vm_off = false
+	_vm.reparent(cam, false)
+	_vm.visible = drawn
+
+func active_cam() -> Camera3D:
+	return _view_cam if in_vehicle else cam
+
+## A crash, felt through the seat.
+func jolt(delta_v: float) -> void:
+	var k := clampf(delta_v / 18.0, 0.15, 1.0)
+	_trauma = minf(_trauma + k, 1.0)
+	_krv += Vector3(randf_range(-6, 6), randf_range(-3, 3), randf_range(-6, 6)) * k
+	_kpv += Vector3(0, -0.5, 0.8) * k
+
+## Where a shot aimed from the vehicle's camera actually comes from, and goes.
+func _vehicle_shot(dir: Vector3, reach: float) -> Array:
+	var view_from := _view_cam.global_position
+	var from := view_from
+	if _vm_off:
+		# Chase view: aim with the camera, shoot from the driver's seat.
+		from = in_vehicle.global_position + in_vehicle.global_basis.y * 1.0
+	var ex: Array[RID] = [player.get_rid(), in_vehicle.get_rid()]
+	var q := PhysicsRayQueryParameters3D.create(view_from, view_from + dir * reach, MASK_SHOT, ex)
+	var aim_hit := player.get_world_3d().direct_space_state.intersect_ray(q)
+	var aim: Vector3 = aim_hit.position if not aim_hit.is_empty() else view_from + dir * reach
+	return [from, (aim - from).normalized()]
+
+## The first tyre along this shot takes it: cars, bikes, and traffic.
+func _check_tyres(from: Vector3, to: Vector3) -> void:
+	var best: Node3D
+	var best_i := -1
+	var best_d := INF
+	for group in ["cars", "bikes"]:
+		for n in get_tree().get_nodes_in_group(group):
+			var v := n as Node3D
+			if v == in_vehicle or v.global_position.distance_to(Geometry3D.get_closest_point_to_segment(v.global_position, from, to)) > 3.5:
+				continue
+			for i in v.tyre_count():
+				var at: Vector3 = v.tyre_pos(i)
+				var near := Geometry3D.get_closest_point_to_segment(at, from, to)
+				if at.distance_to(near) < 0.36 and from.distance_to(at) < best_d:
+					best = v
+					best_i = i
+					best_d = from.distance_to(at)
+	if best:
+		if best.shoot_tyre(best_i) and level and level.has_method("on_tyre_shot"):
+			level.on_tyre_shot(best, best_i)
+		return
+	if level and "traffic" in level and level.traffic:
+		var at: Vector3 = level.traffic.shoot_tyres(from, to)
+		if not is_nan(at.x):
+			Game.play_3d("tyre_pop", at, 0, 12.0)
+
+## Any windshield this shot passes through takes a hit.
+func _check_glass(from: Vector3, to: Vector3) -> void:
+	for n in get_tree().get_nodes_in_group("windshields"):
+		var w := n as Windshield
+		if w.visible:
+			var at := w.crossing(from, to)
+			if not is_nan(at.x):
+				w.strike(at)
 
 func setup(p: FpsController, lvl: Node) -> void:
 	player = p
@@ -538,6 +636,8 @@ func _equip(i: int, initial := false) -> void:
 	if loadout.is_empty():
 		return
 	i = posmod(i, loadout.size())
+	if in_vehicle and not initial and str(loadout[i].def.get("kind", "gun")) != "gun":
+		return
 	if i == slot and not initial:
 		return
 	_free[weapon_id] = free_ammo
@@ -787,7 +887,13 @@ func _input(e: InputEvent) -> void:
 		_look_delta += e.relative
 
 func _unhandled_input(e: InputEvent) -> void:
-	if player == null or not player.enabled or Game.tuning_open() or get_tree().paused:
+	if player == null or Game.tuning_open() or get_tree().paused:
+		return
+	if not player.enabled and in_vehicle == null:
+		return
+	if in_vehicle and not (e.is_action_pressed("holster") or e.is_action_pressed("reload") or e.is_action_pressed("fire_mode") or e.is_action_pressed("fire")
+			or e.is_action_pressed("weapon_1") or e.is_action_pressed("weapon_2") or e.is_action_pressed("weapon_3") or e.is_action_pressed("weapon_4")
+			or e.is_action_pressed("weapon_next") or e.is_action_pressed("weapon_prev")):
 		return
 	if e.is_action_pressed("holster"):
 		set_drawn(not drawn)
@@ -806,7 +912,9 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e.is_action_pressed("aim") and drawn and _kind() == "melee":
 		_throw_knife()
 	elif e.is_action_pressed("aim") and _kind() == "grapple":
-		if _latched:
+		if _latched_drone:
+			_tether_drone_to_aim()
+		elif _latched:
 			_tether_to_aim()
 		else:
 			_release_line()
@@ -840,7 +948,7 @@ func set_drawn(on: bool) -> void:
 		_release_line()
 	drawn = on
 	player.weapon_raised = on
-	_vm.visible = on
+	_vm.visible = on and not _vm_off
 	_draw_t = 0.32
 	Game.play_2d("dry", -6, 0.8 if on else 0.6)
 	if on:
@@ -861,8 +969,9 @@ func _reload() -> void:
 ## Current cone half-angle in degrees (for the HUD crosshair).
 func current_spread() -> float:
 	var move := clampf(player.get_horizontal_speed() / 6.0, 0.0, 1.0) * 1.6 * (1.0 - ads)
-	var air := 0.0 if player.is_on_floor() else 2.5
-	return lerpf(float(weapon.spread_deg), float(weapon.ads_spread_deg), ads) + spread_bloom + move + air
+	var air := 0.0 if player.is_on_floor() or in_vehicle else 2.5
+	var seat := 0.8 if in_vehicle else 0.0  # a moving vehicle is not a firing range
+	return lerpf(float(weapon.spread_deg), float(weapon.ads_spread_deg), ads) + spread_bloom + move + air + seat
 
 func _physics_process(dt: float) -> void:
 	if player == null:
@@ -884,7 +993,7 @@ func _physics_process(dt: float) -> void:
 		_recoil_debt -= r
 		player.apply_recoil(-r, 0.0)
 	_update_knives(dt)
-	if not player.enabled:
+	if not player.enabled and in_vehicle == null:
 		_release_line()
 		return
 	var dbg_fire := Game.debug.has("fire")
@@ -904,6 +1013,8 @@ func _physics_process(dt: float) -> void:
 					set_meta("dbg_grappled", true)
 					print("grapple from ", player.global_position)
 					_fire_grapple()
+	if in_vehicle:
+		return
 	_update_focus()
 	_noise_t -= dt
 	if _noise_t <= 0.0:
@@ -956,9 +1067,16 @@ func _process(dt: float) -> void:
 	# Camera: punch rotation + trauma shake (offsets only; aim is untouched).
 	var t := Time.get_ticks_msec() * 0.001
 	var sh := _trauma * _trauma
-	cam.rotation = _punch + Vector3(sin(t * 61.0), sin(t * 53.0 + 1.3), sin(t * 47.0 + 2.1) * 1.5) * sh * 0.012
-	cam.h_offset = sin(t * 71.0) * sh * 0.012
-	cam.v_offset = sin(t * 67.0 + 0.7) * sh * 0.012
+	if in_vehicle:
+		# The vehicle owns this camera's rotation; shake it sideways only.
+		_view_cam.h_offset = sin(t * 71.0) * sh * 0.05
+		_view_cam.v_offset = sin(t * 67.0 + 0.7) * sh * 0.05
+		if "hold_look" in _view_node:
+			_view_node.set("hold_look", drawn)
+	else:
+		cam.rotation = _punch + Vector3(sin(t * 61.0), sin(t * 53.0 + 1.3), sin(t * 47.0 + 2.1) * 1.5) * sh * 0.012
+		cam.h_offset = sin(t * 71.0) * sh * 0.012
+		cam.v_offset = sin(t * 67.0 + 0.7) * sh * 0.012
 	player.fov_scale = 1.0 + _fov_kick
 	# Mouse-look sway: the gun lags behind the view.
 	var ld := _look_delta
@@ -979,8 +1097,10 @@ func _process(dt: float) -> void:
 	var draw_k := clampf(_draw_t / 0.32, 0.0, 1.0)
 	var draw_off := Vector3(0.05, -0.3, 0.12) * draw_k * draw_k
 	# Wall proximity: pull the gun in so it does not clip into walls.
-	var q := PhysicsRayQueryParameters3D.create(cam.global_position, cam.global_position + player.get_look_dir() * 0.85, 1)
-	var near := not player.get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+	var near := false
+	if in_vehicle == null:
+		var q := PhysicsRayQueryParameters3D.create(cam.global_position, cam.global_position + player.get_look_dir() * 0.85, 1)
+		near = not player.get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 	_wall_pull = move_toward(_wall_pull, 1.0 if near else 0.0, dt * 6.0)
 	# Reload choreography: tilt, drop mag, insert, slap.
 	var rel := Vector3.ZERO
@@ -1052,15 +1172,19 @@ func _fire() -> void:
 	_shots_in_burst += 1
 	var spread := current_spread()
 	spread_bloom = minf(spread_bloom + (0.35 if ads > 0.5 else 0.7), 3.5)
-	var dir := player.get_look_dir()
+	var dir := -_view_cam.global_basis.z if in_vehicle else player.get_look_dir()
 	var rr := deg_to_rad(spread) * sqrt(randf())
 	var a := randf() * TAU
 	var basis := Basis.looking_at(dir, Vector3.UP)
 	dir = (basis * Vector3(cos(a) * tan(rr), sin(a) * tan(rr), -1.0)).normalized()
 	var from := cam.global_position
+	if in_vehicle:
+		var shot := _vehicle_shot(dir, float(weapon.range))
+		from = shot[0]
+		dir = shot[1]
 	var to := from + dir * float(weapon.range)
 	var hit := _shot_ray(from, to)
-	var muzzle := _flash.global_position
+	var muzzle: Vector3 = from if _vm_off else _flash.global_position
 	var end := to
 	if not hit.is_empty():
 		end = hit.position
@@ -1073,6 +1197,8 @@ func _fire() -> void:
 				hit_head = res.zone == "head"
 				Game.play_2d("hitmark", -6 if not res.killed else -2, 0.8 if res.killed else (1.25 if hit_head else 1.0))
 		else:
+			if col.has_meta("shootable") and level and level.has_method("on_shootable_hit"):
+				level.on_shootable_hit(col, 30.0)
 			var n: Vector3 = hit.normal
 			_mark(hit.position, n)
 			_burst("dust", hit.position, n)
@@ -1082,6 +1208,8 @@ func _fire() -> void:
 				Game.play_3d("whiz", hit.position, -14, 3.0, randf_range(1.3, 1.7))
 		if col is RigidBody3D:
 			(col as RigidBody3D).apply_impulse(dir * 6.0, hit.position - (col as RigidBody3D).global_position)
+	_check_glass(from, end + dir * 1.5)
+	_check_tyres(from, end + dir * 1.5)
 	var sup: bool = weapon.get("suppressed", false)
 	if not sup:
 		tracer(muzzle, end)
@@ -1108,13 +1236,20 @@ func _fire() -> void:
 	var climb := 1.0 + minf(_shots_in_burst, 8) * 0.06
 	var rp := float(weapon.recoil_pitch_deg) * (1.0 - ads * 0.4) * climb
 	var ry := randf_range(-1.0, 1.0) * float(weapon.recoil_yaw_deg) + 0.12 * float(weapon.recoil_yaw_deg)
-	player.apply_recoil(rp, ry)
-	_recoil_debt += rp * 0.55
+	if in_vehicle:
+		_view_node.view_kick(rp, ry)
+	else:
+		player.apply_recoil(rp, ry)
+		_recoil_debt += rp * 0.55
 	get_tree().call_group("npc", "hear_noise", player.global_position, float(weapon.noise_radius))
+	if level and level.has_method("on_gunshot"):
+		level.on_gunshot(player.global_position, float(weapon.noise_radius), weapon.get("suppressed", false))
 
 ## A shot ray that passes between the limbs of a person goes on through.
 func _shot_ray(from: Vector3, to: Vector3) -> Dictionary:
 	var ex: Array[RID] = [player.get_rid()]
+	if in_vehicle:
+		ex.append(in_vehicle.get_rid())
 	var space := player.get_world_3d().direct_space_state
 	for i in 3:
 		var q := PhysicsRayQueryParameters3D.create(from, to, MASK_SHOT, ex)
@@ -1240,7 +1375,10 @@ func _use_gadget() -> void:
 		return
 	match kind:
 		"tape_bug":
-			_plant_bug(g)
+			if focus and focus.gadget_kind == kind:
+				focus.use()
+			else:
+				_plant_bug(g)
 		"static_lure":
 			_throw_lure(g)
 		"poison", "forgery":
@@ -1315,6 +1453,8 @@ func _throw_lure(g: Dictionary) -> void:
 	if not is_instance_valid(body):
 		return
 	audio.play()
+	if level and level.has_method("on_lure_active"):
+		level.on_lure_active(body.global_position, radius, duration)
 	var t := 0.0
 	while t < duration and is_instance_valid(body):
 		get_tree().call_group("npc", "hear_noise", body.global_position, radius)
@@ -1338,6 +1478,7 @@ func _on_landed(impact: float) -> void:
 func incoming_shot(from: Vector3, to: Vector3, hit: bool, dmg: float) -> void:
 	tracer(from, to, 260.0)
 	Game.play_3d("shot_far", from, -2, 10.0, randf_range(0.9, 1.1))
+	_check_glass(from, to + (to - from).normalized() * 1.5)
 	var eye := player.get_eye_position()
 	if hit:
 		hurt.emit(dmg)
@@ -1496,7 +1637,13 @@ func _fire_grapple() -> void:
 	if _latched:
 		_yank()
 		return
-	if player.is_grappling() or _hook_t >= 0.0 or not _tether.is_empty():
+	if _latched_drone:
+		# Haul it out of the sky, a little way in front of you.
+		var flat := player.get_look_dir()
+		flat.y = 0.0
+		_slam_drone(player.global_position + flat.normalized() * 5.0 + Vector3.UP * 0.3, true)
+		return
+	if player.is_grappling() or _hook_t >= 0.0 or not _tether.is_empty() or not _wreck_line.is_empty():
 		_release_line()
 		return
 	var dir := player.get_look_dir()
@@ -1511,7 +1658,10 @@ func _fire_grapple() -> void:
 			var z := _hook_body.zone_for_ray(from, dir)
 			_hook_bone = str(hit.collider.get("bone_name")) if hit.collider is PhysicalBone3D else str(z.bone)
 	_hook_from = _flash.global_position
-	_hook_hit = not hit.is_empty() and (_hook_body != null or (int(hit.collider.get("collision_layer")) & 1) != 0)
+	_hook_drone = null
+	if not hit.is_empty() and level and level.has_method("drone_of"):
+		_hook_drone = level.drone_of(hit.collider)
+	_hook_hit = not hit.is_empty() and (_hook_body != null or _hook_drone != null or (int(hit.collider.get("collision_layer")) & 1) != 0)
 	_hook_to = hit.position if not hit.is_empty() else from + dir * rng
 	_hook_dur = maxf(_hook_from.distance_to(_hook_to) / HOOK_SPEED, 0.05)
 	_hook_t = 0.0
@@ -1611,6 +1761,33 @@ func _tether_to_aim() -> void:
 	if not body.crashed.is_connected(_on_crash):
 		body.crashed.connect(_on_crash.bind(body))
 
+## Make the line fast to whatever is under the crosshair: the drone slams into it.
+func _tether_drone_to_aim() -> void:
+	var dir := player.get_look_dir()
+	var from := cam.global_position
+	var rng := float(weapon.get("range", 38.0)) * 1.5
+	var ex: Array[RID] = [player.get_rid()]
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * rng, LINE_MASK, ex)
+	var hit := player.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or (level.has_method("drone_of") and level.drone_of(hit.collider) == _latched_drone):
+		Game.play_2d("dry", -6)
+		return
+	_slam_drone(hit.position, false)
+
+func _slam_drone(at: Vector3, to_hand: bool) -> void:
+	var dr := _latched_drone
+	_latched_drone = null
+	if not is_instance_valid(dr):
+		_release_line()
+		return
+	var wreck: Node3D = level.slam_drone(dr, at)
+	_wreck_line = {"wreck": wreck, "at": at, "t": 0.0, "hand": to_hand}
+	_hook.global_position = at
+	Game.play_2d("grapple", -2, 0.85)
+	Game.play_2d("winch", -2, 1.4)
+	_krv += Vector3(-5.0, 0, 0)
+	_trauma = minf(_trauma + 0.3, 0.7)
+
 func _on_crash(impact: float, at: Vector3, body: NpcBody) -> void:
 	Game.play_3d("thud", at, 2, 6.0, randf_range(0.8, 1.0))
 	Game.play_3d("impact", at, 0, 6.0, 0.7)
@@ -1639,6 +1816,9 @@ func _release_line() -> void:
 	_hook_body = null
 	_latched = null
 	_tether = {}
+	_hook_drone = null
+	_latched_drone = null
+	_wreck_line = {}
 	if _hook:
 		_hook.visible = false
 	if _rope:
@@ -1656,6 +1836,8 @@ func _update_line(dt: float) -> void:
 		var to := _hook_to
 		if is_instance_valid(_hook_body):
 			to = _hook_body.bone_position(_hook_bone)   # the target may move
+		elif is_instance_valid(_hook_drone):
+			to = _hook_drone.global_position
 		var at := _hook_from.lerp(to, k)
 		_hook.global_position = at
 		var d := (to - _hook_from).normalized()
@@ -1673,6 +1855,12 @@ func _update_line(dt: float) -> void:
 				if n and n.alive:
 					n.hear_noise(player.global_position, 30.0)
 				message.emit("Line fast.  LMB: haul in   RMB at a target: tether   R: let go")
+			elif is_instance_valid(_hook_drone):
+				_latched_drone = _hook_drone
+				_hook_drone = null
+				Game.play_3d("stab", to, -2, 8.0, 1.5)
+				_burst("sparks", to, (hand - to).normalized())
+				message.emit("Line in the saucer.  LMB: haul it down   RMB at a target: slam it there   R: let go")
 			elif _hook_hit:
 				if Game.debug.has("fire"):
 					print("grapple anchor ", _hook_to)
@@ -1681,6 +1869,27 @@ func _update_line(dt: float) -> void:
 				_winch.play()
 			else:
 				_release_line()
+		return
+	if _latched_drone:
+		if not is_instance_valid(_latched_drone) or not _latched_drone.get("live") or _latched_drone.global_position.distance_to(player.global_position) > float(weapon.get("range", 38.0)) * 1.6:
+			_release_line()
+			return
+		var at := _latched_drone.global_position
+		_hook.global_position = at
+		_draw_rope(hand, at)
+		return
+	if not _wreck_line.is_empty():
+		_wreck_line.t += dt
+		var w: DroneWreck = _wreck_line.wreck
+		if not is_instance_valid(w) or w.is_landed() or _wreck_line.t > 4.0:
+			_release_line()
+			return
+		var at := w.global_position
+		if _wreck_line.hand:
+			_hook.global_position = at
+			_draw_rope(hand, at)
+		else:
+			_draw_rope(at, _wreck_line.at)
 		return
 	if _latched:
 		if not is_instance_valid(_latched) or _latched.global_position.distance_to(player.global_position) > float(weapon.get("range", 38.0)) * 1.6:

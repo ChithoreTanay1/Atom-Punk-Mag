@@ -213,6 +213,20 @@ impl Npc {
         if self.brain != Brain::Dead { self.brain = Brain::Routine; }
     }
 
+    /// Walk straight at a point, skipping the nav graph (a crowd member on its
+    /// lane). Does nothing once the NPC has its own reasons to be elsewhere.
+    #[func]
+    fn steer_to(&mut self, pos: Vector3, speed: f32) {
+        if self.brain != Brain::Routine { return; }
+        self.patrol.clear();
+        self.goal_face = None;
+        self.walk_speed = speed;
+        self.route = vec![pos];
+        self.dest = Some(pos);
+        self.running = false;
+        self.arrived_sent = true;
+    }
+
     #[func]
     fn at_goal(&self) -> bool {
         self.dest.is_none()

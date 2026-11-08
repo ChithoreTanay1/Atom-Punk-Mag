@@ -8,6 +8,12 @@ uniform vec4 phosphor : source_color = vec4(0.5, 0.81, 0.54, 1.0);
 uniform float brightness = 1.4;
 uniform float seed = 0.0;
 
+varying vec3 wpos;
+
+void vertex() {
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
@@ -16,6 +22,11 @@ void fragment() {
 	vec2 uv = UV;
 	vec2 c = uv - 0.5;
 	float bulge = 1.0 - dot(c, c) * 1.6;
+	// Kit boxes have no UVs: lay the text out in world space instead.
+	if (UV == vec2(0.0)) {
+		uv = fract(vec2(wpos.x + wpos.z, -wpos.y) * 1.3);
+		bulge = 1.0;
+	}
 	// Text-like rows of blocks that scroll every few seconds.
 	float row = floor(uv.y * 14.0);
 	float col = floor(uv.x * 28.0);

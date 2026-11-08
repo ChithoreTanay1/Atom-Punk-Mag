@@ -22,6 +22,8 @@ var _finished := false
 var _arrest_timer := -1.0
 var _info := {}
 var dirigible: Node3D
+## Governor to replay in free play ("" = the first playable one).
+var replay_gov := ""
 
 # ============================================================== build
 
@@ -831,20 +833,11 @@ func _process(dt: float) -> void:
 	var st := Game.mstate()
 	if st.is_empty():
 		return
-	var t := clampf((float(st.minute) - 1070.0) / 75.0, 0.0, 1.0)
+	var t := _dusk_amount(st)
 	if Game.debug.has("dusk"):
 		t = float(Game.debug.dusk)
 	_apply_dusk(t)
-	# Restricted zone by position (works on foot and in cars).
-	player.restricted = 1 if COMPOUND.has_point(player.global_position + Vector3(0, 0.5, 0)) else 0
-	var indoor := absf(player.global_position.x) < 18 and player.global_position.z > -30 and player.global_position.z < -8
-	player.exposure = 0.85 if indoor else lerpf(1.0, 0.55, t)
-	if weather:
-		var cam := get_viewport().get_camera_3d()
-		var cp := cam.global_position if cam else player.global_position
-		var inside := absf(cp.x) < 18.5 and cp.z > -30.5 and cp.z < -7.5 and cp.y < 9.6
-		weather.indoor = inside
-		rain.emitting = not inside and weather.mode != "clear"
+	_update_zones(t)
 	# Tea.
 	if _tea_timer > 0.0:
 		_tea_timer -= dt
@@ -856,30 +849,85 @@ func _process(dt: float) -> void:
 		_arrest_timer -= dt
 		if _arrest_timer <= 0.0 and gov.alive:
 			hud.message("Two royal inspectors arrive and walk the governor out in silence.")
-			gov.go_to(locations["o_gate"], false, NAN)
+			gov.go_to(locations[_arrest_exit()], false, NAN)
 	# Exfiltration.
 	if st.removed != "" and not _finished:
-		var p := player.global_position
-		if p.z > 100.0 or p.length() > 120.0:
-			Game.sim.player_exfiltrated()
+		_check_exfil()
 	# Speaking indicator: governor's lines.
 	if beacons.size() > 0:
 		var on: bool = st.alarm and fmod(Time.get_ticks_msec() * 0.003, 1.0) < 0.5
 		for bm in beacons:
 			bm.visible = on or not st.alarm
-	dirigible.position = Vector3(cos(Time.get_ticks_msec() * 0.00002) * 160.0, 85.0, sin(Time.get_ticks_msec() * 0.00002) * 120.0 - 20.0)
-	dirigible.rotation.y = -Time.get_ticks_msec() * 0.00002
+	if dirigible:
+		dirigible.position = Vector3(cos(Time.get_ticks_msec() * 0.00002) * 160.0, 85.0, sin(Time.get_ticks_msec() * 0.00002) * 120.0 - 20.0)
+		dirigible.rotation.y = -Time.get_ticks_msec() * 0.00002
+
+# Level hooks: another mission's level overrides these.
+
+func _dusk_amount(st: Dictionary) -> float:
+	return clampf((float(st.minute) - 1070.0) / 75.0, 0.0, 1.0)
+
+## Restricted zones, exposure, and rain indoors.
+func _update_zones(t: float) -> void:
+	# Restricted zone by position (works on foot and in cars).
+	player.restricted = 1 if COMPOUND.has_point(player.global_position + Vector3(0, 0.5, 0)) else 0
+	var indoor := absf(player.global_position.x) < 18 and player.global_position.z > -30 and player.global_position.z < -8
+	player.exposure = 0.85 if indoor else lerpf(1.0, 0.55, t)
+	if weather:
+		var cam := get_viewport().get_camera_3d()
+		var cp := cam.global_position if cam else player.global_position
+		var inside := absf(cp.x) < 18.5 and cp.z > -30.5 and cp.z < -7.5 and cp.y < 9.6
+		weather.indoor = inside
+		rain.emitting = not inside and weather.mode != "clear"
+
+func _check_exfil() -> void:
+	var p := player.global_position
+	if p.z > 100.0 or p.length() > 120.0:
+		Game.sim.player_exfiltrated()
+
+## Where the king's inspectors walk the arrested governor to.
+func _arrest_exit() -> String:
+	return "o_gate"
+
+## The centre of the noise civilians run from when the alarm sounds.
+func _alarm_origin() -> Vector3:
+	return Vector3(0, 0, 30)
+
+func _on_activity(e: Dictionary) -> void:
+	if gov.alive:
+		_route_to(gov, e.location)
+	if e.activity == "meeting":
+		_route_to(courier, "pavilion_c")
+	elif courier.alive and gov_activity == "tea":
+		_route_to(courier, "o_s2")
+
+## The governor reached his car at the end of the routine.
+func _drive_away() -> void:
+	var gc := gov_car as ArcadeCar
+	if driving and car == gc:
+		return
+	var y := gc.position.y
+	gc.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	gc.freeze = true
+	_gov_tw = create_tween()
+	_gov_tw.tween_property(gov, "position", gc.position, 0.6)
+	_gov_tw.tween_callback(func(): gov.visible = false)
+	_gov_tw.tween_property(gc, "position", Vector3(0, y, 12), 3.0)
+	_gov_tw.parallel().tween_property(gc, "rotation:y", PI * 0.5, 1.2)
+	_gov_tw.tween_property(gc, "rotation:y", PI, 0.8)
+	_gov_tw.parallel().tween_property(gc, "position", Vector3(0, y, 60), 4.0)
+	_gov_tw.tween_callback(func(): gc.freeze = false)
 
 func _apply_dusk(t: float) -> void:
 	P.set_dusk(t)
-	sun.light_energy = lerpf(0.62, 0.12, t)
-	sun.light_color = Color("#E3DACB").lerp(Color("#C9A27A"), t)
+	sun.light_energy = lerpf(0.72, 0.18, t)
+	sun.light_color = Color("#EFCFA8").lerp(Color("#E09A60"), t)
 	sun.rotation_degrees.x = lerpf(-32.0, -9.0, t)
-	env.ambient_light_energy = lerpf(0.62, 0.3, t)
-	sky_mat.sky_top_color = Color("#5C6669").lerp(Color("#1C2A2E"), t)
-	sky_mat.sky_horizon_color = Color("#8E9699").lerp(Color("#4A5355"), t)
-	sky_mat.ground_horizon_color = Color("#8C9091").lerp(Color("#3E4446"), t)
-	base_fog_color = Color("#848D90").lerp(Color("#2E3B3E"), t)
+	env.ambient_light_energy = lerpf(0.58, 0.36, t)
+	sky_mat.sky_top_color = Color("#3E4D55").lerp(Color("#172732"), t)
+	sky_mat.sky_horizon_color = Color("#7A8A91").lerp(Color("#475A64"), t)
+	sky_mat.ground_horizon_color = Color("#63737A").lerp(Color("#33434C"), t)
+	base_fog_color = Color("#66767E").lerp(Color("#293B46"), t)
 
 func _route_to(n: Npc, loc: String, run := false) -> void:
 	if not locations.has(loc):
@@ -891,12 +939,7 @@ func _on_event(e: Dictionary) -> void:
 	match e.type:
 		"activity":
 			gov_activity = e.activity
-			if gov.alive:
-				_route_to(gov, e.location)
-			if e.activity == "meeting":
-				_route_to(courier, "pavilion_c")
-			elif courier.alive and gov_activity == "tea":
-				_route_to(courier, "o_s2")
+			_on_activity(e)
 		"line":
 			_deliver_line(e)
 		"intel":
@@ -911,7 +954,7 @@ func _on_event(e: Dictionary) -> void:
 				_route_to(gov, "strongroom", true)
 			for n in get_tree().get_nodes_in_group("npc"):
 				if n.role == "civilian":
-					n.hear_noise(Vector3(0, 0, 30), 200.0)
+					n.hear_noise(_alarm_origin(), 200.0)
 		"target_dying":
 			pass
 		"target_down":
@@ -970,20 +1013,7 @@ func _on_gov_arrived() -> void:
 			_tea_timer = 6.0
 		"depart":
 			Game.sim.governor_escaped()
-			var gc := gov_car as ArcadeCar
-			if driving and car == gc:
-				return
-			var y := gc.position.y
-			gc.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
-			gc.freeze = true
-			_gov_tw = create_tween()
-			_gov_tw.tween_property(gov, "position", gc.position, 0.6)
-			_gov_tw.tween_callback(func(): gov.visible = false)
-			_gov_tw.tween_property(gc, "position", Vector3(0, y, 12), 3.0)
-			_gov_tw.parallel().tween_property(gc, "rotation:y", PI * 0.5, 1.2)
-			_gov_tw.tween_property(gc, "rotation:y", PI, 0.8)
-			_gov_tw.parallel().tween_property(gc, "position", Vector3(0, y, 60), 4.0)
-			_gov_tw.tween_callback(func(): gc.freeze = false)
+			_drive_away()
 
 func enter_car(c: ArcadeCar) -> void:
 	if c == gov_car and _gov_tw and _gov_tw.is_running():
@@ -1032,6 +1062,9 @@ func _on_finished(method: String) -> void:
 		"frame": "REMOVED BY THE KING'S OWN HAND", "failed": "THE GOVERNOR SURVIVES THE NIGHT"}
 	var report := ""
 	var buttons := []
+	# Read the state first: applying the result closes the mission.
+	var st := Game.mstate()
+	var dispatch: String = Game.sim.mission_dispatch(method)
 	if Game.mode == "campaign" and Game.sim.has_campaign():
 		report = Game.sim.apply_mission_result(method)
 		Game.save_campaign()
@@ -1039,11 +1072,15 @@ func _on_finished(method: String) -> void:
 	else:
 		report = "Free play: the campaign is not affected."
 		buttons.append(["Replay", func():
-			Game.sim.start_mission()
-			Game.goto("res://scenes/province.tscn")])
+			if replay_gov != "":
+				Game.sim.start_mission_for(replay_gov)
+			else:
+				Game.sim.start_mission()
+			Game.goto(scene_file_path)])
 		buttons.append(["Main menu", func(): Game.goto("res://scenes/main_menu.tscn")])
-	var st := Game.mstate()
 	var t := "[b][color=#D9962B]%s[/color][/b]\n\n" % titles.get(method, method)
+	if dispatch != "":
+		t += "[i]%s[/i]\n\n" % dispatch
 	t += "%s\n\n" % report
 	t += "[color=#7FCF8A]Clock %s   Intel %d/%d   Kills %d   Alarm %s[/color]\n" % [st.get("clock", "--"), st.get("intel", []).size(), int(st.get("intel_total", 0)), int(st.get("kills", 0)), "YES" if st.get("alarm", false) else "no"]
 	if method == "loud_kill":
@@ -1054,4 +1091,6 @@ func _on_finished(method: String) -> void:
 	player.set_active(false)
 	if driving:
 		car.set_driver(false)
+	if riding:
+		bike.set_driver(false)
 	hud.show_debrief(t, buttons)

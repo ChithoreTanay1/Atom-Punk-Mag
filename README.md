@@ -62,6 +62,18 @@ ASSETS.md         license and budget log for every asset
 2. Run Godot 4.7.2 with `--path godot`, or open `/godot` in the editor and press Play.
 3. Main menu: **New campaign** (war room, then the field operation), **Free play: Saptavarta** (the mission alone), **Feel test** (the endless expressway, test room and handling pad, milestone 1).
 
+## Crashes, tyres and glass
+
+All the rules and numbers are in `core/src/crash.rs` and the `crash` section of `data/tuning.ron` (F1 panel). The bridge only measures the speed change of an impact (`bridge/src/impact.rs`).
+
+- **Crashes** hurt you, and hurt more on a bike. They take hull: below 35% the engine limps and smokes, at 0 it is dead. A wrecked bike cannot be ridden. A hard hit (10 m/s of speed change) throws a rider off.
+- **Windshield:** the first hit crazes the whole pane and bends the view. The second takes it out and the view is clear. Bullets pass through it either way, and hard crashes break it too.
+- **Tyres:** one bullet punctures a tyre, which goes flat over 1.5 s. A flat has less grip and rolls lower, and its drag grows with speed. On a car it pulls towards that corner, and on a bike a flat front also shakes the bars. Street traffic with a shot tyre stops in its lane. A pursuit rider with one goes down.
+- **Bent metal:** a crash bends the panels in where it landed, so a clipped corner leaves a crumpled fender. Repeat hits add up (`car_dent.gd`).
+- **Riders:** shot off a pursuit bike, a rider tumbles away at the speed they were doing and the bike falls over and slides to rest.
+- **Saucer drones:** five bullets bring one down (`drone_hp`). The line hooks one too: then LMB hauls it down in front of you, and RMB slams it into whatever is under your crosshair. A falling saucer kills whoever it lands on, and the crash raises the alarm.
+- **Shooting from the seat:** guns work in the car (either view) and on the bike. Knife and line stay on the belt.
+
 ## The feel test: A1 Mauryan Way
 
 The driving test is an endless expressway built after `refs/expressway.jfif` (`scripts/expressway.gd`, `scripts/traffic.gd`, `scripts/minimap.gd`, level `scripts/test_track.gd`).
@@ -100,7 +112,8 @@ Debug capture: `Godot --path godot res://scenes/province.tscn -- --shot=out.png 
 | Takedown (from behind, unseen) | F |
 | Notebook (dossier, intel, objectives) | Tab |
 | Exchange terminal (buy / sell, telex wire) | X (or M) |
-| Driving: cockpit / chase camera | V |
+| Driving: cockpit / chase camera (the bike is always first person) | V |
+| Shooting from a car or bike: draw / fire / reload / weapon slots | H or LMB / LMB / R / 1 2 |
 | Reset car upright | T |
 | Pause / tuning panel / frame-time overlay / fullscreen | Esc / F1 / F3 / F11 |
 

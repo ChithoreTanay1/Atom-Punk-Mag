@@ -81,3 +81,10 @@ No CC-BY assets yet. MIT code:
 CC0 shaders used, credited as a courtesy:
 - "PS1/PSX PostProcessing" by Grau, https://godotshaders.com/shader/ps1-psx-postprocessing/ (CC0)
 - "Simple rain/snow shader" by mo32167, https://godotshaders.com/shader/simple-rain-snow-shader/ (CC0)
+| proc_temple | The Great Temple: rock-cut cliffs, terraces, stairs, colonnade, gopuram, nave, wings, stone elephants, lamp pedestals, excavators | ext / int | n/a (`temple.gd`, built to refs/kexterior, kstaircase, kinterior) | own work | own | see frame report | shader | no |
+| proc_relief | Carved wall: attendants, guardian, elephants, telex, reels, cassettes, dials, baked at load | ext / int | n/a (`bridge/src/relief.rs`, composition after refs/kcarving; figures are original generic court figures) | own work | own | n/a | 1024 generated | no |
+| proc_pilgrim | Crowd impostor, robed figure for the MultiMesh | ext | n/a (`Builder.pilgrim`, `crowd.gdshader`) | own work | own | ~120 | none | no |
+| proc_eyes | Avekṣā gantry camera, tethered aerostat, saucer drone | ext | n/a (`temple.gd`) | own work | own | low | none | no |
+| proc_shikra | Kestrel Shikra 250 motorcycle, bars, gauges, rider | vehicle | n/a (`Builder.make_bike`, `bike_cockpit.gd`) | own work | own | low | none | no |
+| proc_windshield | Kestrel windscreen and its crack shader | vehicle | n/a (`windshield.gd`, `windshield_crack.gdshader`) | own work | own | 2 | none | no |
+| sfx_vehicle_damage | Two-stroke ring-ding, crash, glass crack, glass break, tyre pop | audio | n/a (synthesised in `bridge/src/sfx.rs`) | own work | own | n/a | n/a | no |

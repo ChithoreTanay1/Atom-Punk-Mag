@@ -120,22 +120,86 @@ tunable_struct!(VehicleTuning {
     gears: 5.0, 1.0, 8.0, "Gear count (audio only)";
 });
 
+tunable_struct!(BikeTuning {
+    mass: 170.0, 80.0, 400.0, "Bike and rider mass (kg)";
+    com_height: -0.25, -1.0, 0.5, "Centre of mass offset (m)";
+    susp_rest: 0.34, 0.1, 0.8, "Suspension ray length at rest (m)";
+    susp_spring: 12000.0, 2000.0, 40000.0, "Spring rate per wheel (N/m)";
+    susp_damp: 1100.0, 100.0, 5000.0, "Damper per wheel (N per m/s)";
+    wheel_radius: 0.31, 0.2, 0.5, "Wheel radius (m)";
+    max_speed: 58.0, 15.0, 90.0, "Top speed (m/s)";
+    drive_force: 2300.0, 300.0, 6000.0, "Peak drive force at the top of the powerband (N)";
+    below_band: 0.3, 0.05, 1.0, "Share of drive below the powerband (a two-stroke bogs)";
+    band_start: 0.62, 0.2, 0.95, "Rev fraction where the powerband starts";
+    band_snap: 0.08, 0.01, 0.4, "Rev fractions it takes to come on the pipe (smaller is snappier)";
+    gears: 6.0, 2.0, 7.0, "Gears (auto)";
+    shift_cut: 0.09, 0.0, 0.4, "Drive cut on a gear change (s)";
+    reverse_force: 320.0, 50.0, 1500.0, "Paddling backwards (N)";
+    brake_force: 3200.0, 500.0, 8000.0, "Brake force (N)";
+    grip: 1.25, 0.3, 3.0, "Sideways grip";
+    slide_at: 0.85, 0.2, 2.0, "Sideways slip (m/s) above which the tyres let go";
+    steer_low: 2.9, 0.5, 6.0, "Yaw rate at low speed (rad/s)";
+    steer_high: 0.72, 0.1, 2.5, "Yaw rate at top speed (rad/s)";
+    steer_rate: 7.5, 0.5, 25.0, "Steering response rate";
+    yaw_gain: 9.0, 1.0, 30.0, "How hard the body follows the steering";
+    upright_gain: 90.0, 5.0, 300.0, "Upright stabilizer stiffness";
+    upright_damp: 14.0, 0.5, 60.0, "Upright stabilizer damping";
+    lean_max_deg: 42.0, 0.0, 60.0, "Visual lean at full turn (deg)";
+    lean_rate: 7.0, 0.5, 25.0, "Visual lean rate";
+    wheelie_deg: 7.0, 0.0, 30.0, "Visual front-wheel lift on the pipe (deg)";
+    drag: 0.1, 0.0, 1.0, "Air drag coefficient";
+    idle_rpm: 1600.0, 500.0, 3000.0, "Idle RPM";
+    max_rpm: 11500.0, 5000.0, 16000.0, "Redline RPM";
+    eye_height: 1.46, 1.0, 2.0, "Rider's eye above the road (m)";
+    eye_back: 0.1, -0.4, 0.6, "Rider's eye behind the bike's centre (m)";
+    horizon_roll: 0.4, 0.0, 1.0, "How much of the lean tilts the view";
+    fov: 76.0, 55.0, 100.0, "Riding FOV at rest (deg)";
+    fov_gain: 14.0, 0.0, 30.0, "Extra FOV at top speed (deg)";
+});
+
+tunable_struct!(CrashTuning {
+    min_impact: 4.5, 1.0, 15.0, "Speed change below which a hit is only a scrape (m/s)";
+    injury_start: 8.0, 1.0, 30.0, "Speed change where it starts to hurt (m/s)";
+    injury_per_ms: 3.2, 0.0, 15.0, "Damage to the person per m/s past that";
+    bike_injury_mult: 1.4, 1.0, 4.0, "Injury multiplier with no car around you";
+    bike_eject_at: 10.0, 3.0, 40.0, "Speed change that throws a rider off (m/s)";
+    car_hull: 100.0, 10.0, 500.0, "Car structure";
+    bike_hull: 70.0, 10.0, 300.0, "Bike structure";
+    hull_per_ms: 3.0, 0.0, 20.0, "Hull lost per m/s of impact";
+    limp_fraction: 0.35, 0.05, 0.9, "Below this hull fraction the engine limps";
+    limp_power: 0.45, 0.05, 1.0, "Engine power while limping";
+    crack_at: 9.0, 2.0, 40.0, "Speed change that cracks a windshield (m/s)";
+    shatter_at: 19.0, 4.0, 60.0, "Speed change that takes one out at once (m/s)";
+    thrown_seconds: 2.4, 0.5, 8.0, "Time on the ground after being thrown (s)";
+    deflate_seconds: 1.5, 0.1, 10.0, "A shot tyre goes flat over this long (s)";
+    flat_grip: 0.42, 0.05, 1.0, "Grip left on a flat";
+    flat_radius: 0.62, 0.3, 1.0, "Rolling radius left on a flat (share of full)";
+    flat_drag: 3200.0, 0.0, 8000.0, "Drag of one flat tyre at speed (N)";
+    dent_depth: 0.6, 0.0, 1.0, "How far the worst crash bends a panel in (m)";
+    dent_radius: 1.1, 0.2, 2.0, "How wide the worst dent reaches (m)";
+    drone_hp: 150.0, 10.0, 1000.0, "Saucer drone structure (a bullet does 30)";
+});
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
 #[serde(default)]
 pub struct Tuning {
     pub movement: MovementTuning,
     pub camera: CameraTuning,
     pub vehicle: VehicleTuning,
+    pub bike: BikeTuning,
+    pub crash: CrashTuning,
 }
 
 impl Tuning {
-    pub const SECTIONS: &'static [&'static str] = &["movement", "camera", "vehicle"];
+    pub const SECTIONS: &'static [&'static str] = &["movement", "camera", "vehicle", "bike", "crash"];
 
     pub fn fields(section: &str) -> &'static [FieldInfo] {
         match section {
             "movement" => MovementTuning::FIELDS,
             "camera" => CameraTuning::FIELDS,
             "vehicle" => VehicleTuning::FIELDS,
+            "bike" => BikeTuning::FIELDS,
+            "crash" => CrashTuning::FIELDS,
             _ => &[],
         }
     }
@@ -145,6 +209,8 @@ impl Tuning {
             "movement" => self.movement.get(key),
             "camera" => self.camera.get(key),
             "vehicle" => self.vehicle.get(key),
+            "bike" => self.bike.get(key),
+            "crash" => self.crash.get(key),
             _ => None,
         }
     }
@@ -154,6 +220,8 @@ impl Tuning {
             "movement" => self.movement.set(key, v),
             "camera" => self.camera.set(key, v),
             "vehicle" => self.vehicle.set(key, v),
+            "bike" => self.bike.set(key, v),
+            "crash" => self.crash.set(key, v),
             _ => false,
         }
     }

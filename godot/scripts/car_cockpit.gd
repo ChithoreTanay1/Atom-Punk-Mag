@@ -16,6 +16,8 @@ const VFD_GREEN := Color(0.45, 1.0, 0.68)
 const VFD_AMBER := Color(1.0, 0.62, 0.2)
 
 var active := false
+## Weapon up: the head stays where it was put.
+var hold_look := false
 var cam: Camera3D
 var _car: ArcadeCar
 var _wheel: Node3D
@@ -289,6 +291,10 @@ func activate(on: bool) -> void:
 		_prev_vel = _car.linear_velocity if _car else Vector3.ZERO
 		cam.make_current()
 
+func view_kick(pitch_deg: float, yaw_deg: float) -> void:
+	_head_pitch = clampf(_head_pitch + deg_to_rad(pitch_deg), -0.75, 0.55)
+	_head_yaw = clampf(_head_yaw + deg_to_rad(yaw_deg), -1.9, 1.9)
+
 func _unhandled_input(e: InputEvent) -> void:
 	if not active or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		return
@@ -324,7 +330,7 @@ func _process(dt: float) -> void:
 	# Head: recentres after a pause, glances into turns, leans with g-forces.
 	_look_timer -= dt
 	var yaw_rate := _car.angular_velocity.y
-	if _look_timer <= 0.0:
+	if _look_timer <= 0.0 and not hold_look:
 		_head_yaw = lerpf(_head_yaw, clampf(yaw_rate * 0.12, -0.25, 0.25), 1.0 - exp(-dt * 3.0))
 		_head_pitch = lerpf(_head_pitch, -0.1, 1.0 - exp(-dt * 2.0))
 	var basis_inv := _car.global_transform.basis.inverse()

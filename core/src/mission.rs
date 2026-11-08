@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 use crate::content::{Activity, Content, GadgetKind, Method, MissionDef};
+use crate::pursuit::{Pursuit, PursuitState};
+use crate::surveillance::{Surveillance, SurveillanceEvent};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum TargetStatus {
@@ -31,6 +33,10 @@ pub enum MissionEvent {
     Message(String),
     /// Mission is over; show debrief.
     Finished { method: Method },
+    /// Something happened in the monitoring room.
+    Feed(SurveillanceEvent),
+    /// The chase ended: they lost you, or you made the yard.
+    PursuitOver { lost: bool },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -71,6 +77,13 @@ pub struct Mission {
     pub bodies_found: u32,
     pub finished: Option<Method>,
     pub extra_guards: u32,
+    /// Avekṣā's monitoring room (festival missions only).
+    pub surveillance: Option<Surveillance>,
+    pub pursuit: Option<Pursuit>,
+    /// Bystanders killed in a crush, reported by the level.
+    pub crushed: u32,
+    /// Bystanders killed by the player.
+    pub bystanders: u32,
     events: Vec<MissionEvent>,
 }
 
@@ -82,7 +95,10 @@ impl Mission {
             .loadout_gadgets
             .iter()
             .filter_map(|g| content.gadget(g))
-            .map(|g| GadgetStock { id: g.id.clone(), kind: g.kind, count: g.count })
+            .map(|g| {
+                let count = def.gadget_counts.iter().find(|(id, _)| id == &g.id).map(|(_, n)| *n).unwrap_or(g.count);
+                GadgetStock { id: g.id.clone(), kind: g.kind, count }
+            })
             .collect();
         let mut weapons = vec![def.loadout_weapon.clone()];
         let mut stash = std::collections::BTreeMap::new();
@@ -120,6 +136,10 @@ impl Mission {
             bodies_found: 0,
             finished: None,
             extra_guards,
+            surveillance: def.festival.as_ref().map(|f| Surveillance::new(f.surveillance.clone())),
+            pursuit: def.festival.as_ref().map(|f| Pursuit::new(f.pursuit.clone())),
+            crushed: 0,
+            bystanders: 0,
             events: vec![],
             def,
         })
@@ -143,6 +163,13 @@ impl Mission {
     pub fn tick(&mut self, dt: f32) {
         if self.finished.is_some() { return; }
         self.clock += dt * self.def.time_scale;
+
+        if let Some(sv) = &mut self.surveillance {
+            sv.tick(dt);
+            for e in sv.drain_events() {
+                self.events.push(MissionEvent::Feed(e));
+            }
+        }
 
         // Routine progression (suspended under alarm: he hides).
         if !self.alarm && self.target == TargetStatus::Alive {
@@ -366,7 +393,14 @@ impl Mission {
     pub fn objectives(&self) -> Vec<String> {
         let mut out = vec![];
         if self.removal.is_some() {
-            out.push("Exfiltrate: leave through the south boulevard or drive away".into());
+            out.push(if self.def.exfil_text.is_empty() {
+                "Exfiltrate: leave through the south boulevard or drive away".to_string()
+            } else {
+                self.def.exfil_text.clone()
+            });
+            if self.pursuit.as_ref().is_some_and(|p| p.active()) {
+                out.push("You are being followed. Lose them, or reach the yard.".into());
+            }
             return out;
         }
         out.push("Remove the governor before he departs".into());
@@ -378,8 +412,68 @@ impl Mission {
         if self.tea_poisoned && !self.tea_drunk { out.push("Tea is dosed. Let him drink.".into()); }
         if self.forgery_planted && !self.telex_sent { out.push("Send the tip-off from the office telex".into()); }
         if !self.forgery_planted && self.forgery_ready() { out.push("Optional: plant the forged dispatch in his office".into()); }
-        if self.alarm { out.push("ALARM: he is sheltering in the strongroom".into()); }
+        if self.alarm {
+            out.push(if self.def.alarm_text.is_empty() {
+                "ALARM: he is sheltering in the strongroom".to_string()
+            } else {
+                self.def.alarm_text.clone()
+            });
+        }
         out
+    }
+
+    // ---- Festival systems --------------------------------------------------
+
+    /// A crime goes on tape on a live feed. Returns false if nothing recorded.
+    pub fn record_crime(&mut self, feed: &str, kill: bool) -> bool {
+        let Some(sv) = &mut self.surveillance else { return false };
+        let on_tape = sv.record(feed, kill);
+        for e in sv.drain_events() {
+            self.events.push(MissionEvent::Feed(e));
+        }
+        on_tape
+    }
+
+    /// Start the chase. Returns (bikes, drones).
+    pub fn start_pursuit(&mut self) -> (u32, u32) {
+        let recorded = self.surveillance.as_ref().is_some_and(|s| s.recorded > 0);
+        let alarm = self.alarm;
+        self.pursuit.as_mut().map(|p| p.start(recorded, alarm)).unwrap_or((0, 0))
+    }
+
+    pub fn pursuit_tick(&mut self, dt: f32, seen: bool) {
+        let Some(p) = &mut self.pursuit else { return };
+        let was = p.state;
+        let now = p.tick(dt, seen);
+        if was == PursuitState::Active && now == PursuitState::Lost {
+            self.events.push(MissionEvent::PursuitOver { lost: true });
+            self.events.push(MissionEvent::Message("They have lost you. The network has you now.".into()));
+            self.player_exfiltrated();
+        }
+    }
+
+    /// Reached the safehouse yard: over, chased or not.
+    pub fn reach_safehouse(&mut self) {
+        if self.removal.is_none() { return; }
+        if let Some(p) = &mut self.pursuit {
+            let was_active = p.active();
+            p.reach_safehouse();
+            if was_active {
+                self.events.push(MissionEvent::PursuitOver { lost: false });
+            }
+        }
+        self.player_exfiltrated();
+    }
+
+    /// Heat the mission adds beyond its method: tapes and the crushed.
+    pub fn extra_heat(&self) -> f32 {
+        let tapes = self.surveillance.as_ref().map(|s| s.heat).unwrap_or(0.0);
+        let per = self.def.festival.as_ref().map(|f| f.crowd.crush_heat).unwrap_or(0.0);
+        tapes + (self.crushed + self.bystanders) as f32 * per
+    }
+
+    pub fn dispatch_for(&self, m: Method) -> Option<&str> {
+        self.def.dispatches.iter().find(|d| d.method == m).map(|d| d.text.as_str())
     }
 }
 
@@ -456,6 +550,85 @@ mod tests {
         let mut m2 = first_mission(&c);
         assert!(m2.damage_player(1000.0));
         assert_eq!(m2.finished, Some(Method::Failed));
+    }
+
+    fn festival(c: &Content) -> Mission {
+        let mut m = Mission::new(c, "hiranyavaha_festival", 0.0).unwrap();
+        m.surveillance.as_mut().unwrap().add_feed("g1", "terrace");
+        m
+    }
+
+    #[test]
+    fn festival_mission_has_its_systems_and_its_own_stock() {
+        let c = content();
+        let m = festival(&c);
+        assert!(m.surveillance.is_some() && m.pursuit.is_some());
+        let forged = m.gadgets.iter().find(|g| g.kind == GadgetKind::Forgery).unwrap();
+        let usual = c.gadget(&forged.id).unwrap().count;
+        assert!(forged.count > usual, "needs one for the frame and one for patrols");
+        assert_eq!(first_mission(&c).surveillance.is_none(), true);
+    }
+
+    #[test]
+    fn dead_feed_notice_reaches_the_mission_events() {
+        let c = content();
+        let mut m = festival(&c);
+        m.surveillance.as_mut().unwrap().toggle_power("terrace");
+        let limit = m.surveillance.as_ref().unwrap().params.power_notice_s;
+        let mut noticed = false;
+        for _ in 0..((limit + 2.0) as i32) {
+            m.tick(1.0);
+            noticed |= m.drain_events().iter().any(|e| matches!(e, MissionEvent::Feed(SurveillanceEvent::Noticed { .. })));
+        }
+        assert!(noticed);
+    }
+
+    #[test]
+    fn crimes_on_tape_cost_heat_and_a_kill_on_tape_is_an_alarm_event() {
+        let c = content();
+        let mut m = festival(&c);
+        assert_eq!(m.extra_heat(), 0.0);
+        assert!(m.record_crime("g1", true));
+        assert!(m.extra_heat() > 0.0);
+        assert!(m.drain_events().iter().any(|e| matches!(e, MissionEvent::Feed(SurveillanceEvent::RecordAlarm))));
+    }
+
+    #[test]
+    fn clean_kill_rides_home_alone_a_loud_one_is_chased() {
+        let c = content();
+        let mut m = festival(&c);
+        m.governor_killed();
+        assert_eq!(m.removal, Some(Method::QuietKill));
+        assert_eq!(m.start_pursuit(), (0, 0));
+        m.reach_safehouse();
+        assert_eq!(m.finished, Some(Method::QuietKill));
+
+        let mut m = festival(&c);
+        m.raise_alarm();
+        m.governor_killed();
+        let (bikes, drones) = m.start_pursuit();
+        assert!(bikes > 0 && drones > 0);
+        let lose = m.pursuit.as_ref().unwrap().params.lose_seconds;
+        m.pursuit_tick(lose - 1.0, false);
+        assert_eq!(m.finished, None);
+        m.pursuit_tick(2.0, false);
+        assert_eq!(m.finished, Some(Method::LoudKill));
+    }
+
+    #[test]
+    fn the_safehouse_means_nothing_before_the_kill() {
+        let c = content();
+        let mut m = festival(&c);
+        m.reach_safehouse();
+        assert_eq!(m.finished, None);
+    }
+
+    #[test]
+    fn procession_is_on_the_schedule() {
+        let c = content();
+        let m = festival(&c);
+        assert!(m.def.schedule.iter().any(|e| e.activity == Activity::Procession));
+        assert!(m.dispatch_for(Method::QuietKill).is_some());
     }
 
     #[test]

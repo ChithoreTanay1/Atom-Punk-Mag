@@ -108,7 +108,10 @@ func _ready() -> void:
 	menu.add_child(_item("03", "Free play: Saptavarta", func():
 		Game.sim.start_mission()
 		Game.free_play()))
-	menu.add_child(_item("04", "Feel test: expressway and test room", func():
+	menu.add_child(_item("04", "Free play: The Great Temple", func():
+		Game.sim.start_mission_for("gov_hiranyavaha")
+		Game.free_play()))
+	menu.add_child(_item("05", "Feel test: expressway and test room", func():
 		Game.mode = "free"
 		Game.goto("res://scenes/test_track.tscn")))
 	_gap(menu, 18)
@@ -242,9 +245,9 @@ func _build_backdrop() -> void:
 	_env = Environment.new()
 	_env.background_mode = Environment.BG_SKY
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color("#1E2C30")
-	sky_mat.sky_horizon_color = Color("#4E5759")
-	sky_mat.ground_horizon_color = Color("#3E4446")
+	sky_mat.sky_top_color = Color("#10222E")
+	sky_mat.sky_horizon_color = Color("#3E5662")
+	sky_mat.ground_horizon_color = Color("#2C3E48")
 	sky_mat.ground_bottom_color = Color("#22272A")
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
@@ -254,7 +257,7 @@ func _build_backdrop() -> void:
 	_env.ambient_light_energy = 0.5
 	_env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	_env.fog_enabled = true
-	_env.fog_light_color = Color("#34413F")
+	_env.fog_light_color = Color("#223844")
 	_env.fog_density = 0.016
 	_env.glow_enabled = true
 	_env.glow_intensity = 0.6
@@ -322,7 +325,7 @@ func _process(dt: float) -> void:
 	_cam.position = Vector3(cos(_orbit) * r, 3.2 + sin(_orbit * 0.7) * 0.6, sin(_orbit) * r)
 	_cam.look_at(Vector3(0, 10.0, 0))
 	if _weather:
-		_env.fog_light_color = Color("#34413F").lerp(Color("#9AA3A6"), _weather.snow * 0.7 if _weather.mode == "snow" else 0.0)
+		_env.fog_light_color = Color("#223844").lerp(Color("#9AA3A6"), _weather.snow * 0.7 if _weather.mode == "snow" else 0.0)
 	_route.queue_redraw()
 	if _shown >= _lines.size():
 		return

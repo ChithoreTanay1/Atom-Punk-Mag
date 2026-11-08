@@ -260,7 +260,7 @@ func save_campaign() -> void:
 
 func free_play() -> void:
 	mode = "free"
-	goto("res://scenes/province.tscn")
+	goto(sim.mission_scene())
 
 # ---------------------------------------------------------------- overlays
 

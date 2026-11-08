@@ -111,6 +111,8 @@ The sim is deterministic (seeded SplitMix64) so bugs replay.
 - **Vehicle:** the Kestrel 80 wedge coupe, drivable, with a full 80s cockpit view; every street car is one, including the governor's.
 - **The Pataliputra Exchange:** an early-80s pretend stock market with 15 invented listings, ticker tape on the HUD, a terminal (M), prices that react to deaths and methods.
 - **Feel test, A1 Mauryan Way:** an endless streamed expressway after `refs/expressway.jfif` (6 lanes, Y-pier viaduct with drivable ramps, promenade, overpasses, atompunk building rows, traffic, airships, minimap), with the test room and handling pad in a yard by the spawn.
+- **Mission 2, *Nothing Unobserved*:** a festival crowd at the Great Temple under Avekṣā Corp's surveillance (cameras, aerostat, drones, a reel room), and an escape on the Kestrel Shikra 250 two-stroke, ridden in first person, with pursuit riders behind you. Menu item 04.
+- **Vehicle damage:** crashes (injury, hull, thrown riders, bent panels), a two-stage windshield, shootable tyres, guns usable from the seat, riders shot off bikes, and saucer drones you can shoot down or rope into things. See `core/src/crash.rs`.
 - **Settings:** weather (rain / snow / clear, with persistent wetness and snow cover), retro filter (off / dither / PSX), LOW / MEDIUM / HIGH presets. Measured: locked 60 fps on Iris Xe at 1600x900, MEDIUM.
 
 Next milestones: fallout systems deepening, more provinces and governors as

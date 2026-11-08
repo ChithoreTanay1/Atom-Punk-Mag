@@ -18,6 +18,9 @@ const PAINTS := ["#2B2F31", "#2F6E73", "#C9B88F", "#24414F", "#A2512F", "#8E8A82
 var focus := Vector3.ZERO
 ## Things traffic queues behind instead of driving through (player, car).
 var obstacles: Array[Node3D] = []
+## South of this z there is no road (a level whose road starts at its gate):
+## cars simply are not there, in sight or in the way.
+var min_z := -INF
 var cars: Array[Dictionary] = []
 var _rng := RandomNumberGenerator.new()
 static var _paints := {}
@@ -28,6 +31,26 @@ func setup(per_lane: int, seed_: int) -> void:
 	for li in LANES.size():
 		for k in per_lane:
 			_spawn(li, focus.z - WINDOW + (k + _rng.randf_range(0.1, 0.7)) * step)
+
+## A shot along from..to: a car with a tyre in the way loses it, sags on that
+## corner and coasts to a stop. The others go round.
+func shoot_tyres(from: Vector3, to: Vector3) -> Vector3:
+	for c in cars:
+		var body: AnimatableBody3D = c.body
+		if not body.visible or c.has("pref0"):
+			continue
+		if body.global_position.distance_to(Geometry3D.get_closest_point_to_segment(body.global_position, from, to)) > 4.0:
+			continue
+		for x: float in [-0.8, 0.8]:
+			for z: float in [-1.38, 1.38]:
+				var at := body.global_transform * Vector3(x, 0.32, z)
+				if at.distance_to(Geometry3D.get_closest_point_to_segment(at, from, to)) < 0.36:
+					c["pref0"] = c.pref
+					c.pref = 0.0
+					body.rotation.x = 0.035 * signf(z)
+					body.rotation.z = -0.045 * signf(x)
+					return at
+	return Vector3(NAN, 0, 0)
 
 func _spawn(li: int, z: float) -> void:
 	var van := _rng.randf() < 0.2
@@ -87,8 +110,17 @@ func _physics_process(dt: float) -> void:
 		c.x += vx * dt
 		c.z += dir * c.v * dt
 		var body: AnimatableBody3D = c.body
+		var on_road: bool = c.z >= min_z
+		if body.visible != on_road:
+			body.visible = on_road
+			body.collision_layer = 8 if on_road else 0
 		var dz: float = c.z - focus.z
 		if absf(dz) > WINDOW:
+			# Out of sight and replaced: whatever happened to it is over.
+			if c.has("pref0"):
+				c.pref = c.pref0
+				c.erase("pref0")
+				body.rotation = Vector3.ZERO
 			c.z -= signf(dz) * WINDOW * 2.0
 			c.v = c.pref
 			c.x = tx

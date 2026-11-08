@@ -21,8 +21,10 @@ use godot::classes::input::MouseMode;
 use godot::prelude::*;
 
 use magadha_core::rng::Rng;
+use magadha_core::crash::{assess, CrashOutcome, Glass, Hull, Tyre, Vehicle as CrashVehicle};
 use magadha_core::tuning::{CameraTuning, VehicleTuning};
 
+use crate::impact::{impact_point, ImpactSensor};
 use crate::npc::Npc;
 use crate::player::{LAYER_NPC, LAYER_PLAYER, LAYER_VEHICLE, LAYER_WORLD};
 use crate::world::world;
@@ -41,6 +43,7 @@ struct Wheel {
     spin: f32,
     slip: f32,
     load: f32,
+    tyre: Tyre,
 }
 
 #[derive(Default)]
@@ -86,6 +89,14 @@ pub struct ArcadeCar {
     /// True while the player is driving.
     #[var]
     driver_active: bool,
+    /// Weapon up: the view stays where it was put.
+    #[var]
+    hold_look: bool,
+    sensor: ImpactSensor,
+    impact_at: Vector3,
+    impact_push: Vector3,
+    hull: Hull,
+    glass: Glass,
     /// Seconds a driverless car has been at rest; past a beat it is put to
     /// sleep and skipped entirely, so parked cars cost nothing.
     idle_t: f32,
@@ -123,6 +134,12 @@ impl IRigidBody3D for ArcadeCar {
             audio_load: 0.0,
             buf: Vec::with_capacity(4096),
             driver_active: false,
+            hold_look: false,
+            sensor: ImpactSensor::default(),
+            impact_at: Vector3::ZERO,
+            impact_push: Vector3::ZERO,
+            hull: Hull::new(100.0),
+            glass: Glass::default(),
             idle_t: 0.0,
             debug_text: GString::new(),
             base,
@@ -130,6 +147,7 @@ impl IRigidBody3D for ArcadeCar {
     }
 
     fn ready(&mut self) {
+        self.hull = Hull::new(world().tuning.crash.car_hull);
         let vt = world().tuning.vehicle.clone();
         let self_gd = self.to_gd();
         {
@@ -170,7 +188,7 @@ impl IRigidBody3D for ArcadeCar {
                 contact: false,
                 spin: 0.0,
                 slip: 0.0,
-                load: 0.0,
+                load: 0.0, tyre: Tyre::default(),
             });
         }
 
@@ -225,6 +243,7 @@ impl IRigidBody3D for ArcadeCar {
         self.read_input(dt, &vt);
         self.simulate(dt, &vt);
         self.run_over_check();
+        self.check_impact(dt);
     }
 
     fn process(&mut self, delta: f64) {
@@ -315,8 +334,80 @@ impl ArcadeCar {
     }
 
     /// Put the car back on its wheels (debug / stuck).
+    /// Reports each crash: speed change, injury to whoever is aboard, how many
+    /// hits the windshield takes.
+    #[signal]
+    fn crashed(delta_v: f32, injury: f32, glass_hits: i64);
+
+    /// Car space: where the last crash landed.
+    #[func]
+    fn get_impact_point(&self) -> Vector3 {
+        self.impact_at
+    }
+
+    /// Car space: the way the last crash pushed the panels.
+    #[func]
+    fn get_impact_push(&self) -> Vector3 {
+        self.impact_push
+    }
+
+    /// 0..1: what is left of the structure.
+    #[func]
+    fn get_hull(&self) -> f32 {
+        self.hull.fraction()
+    }
+
+    #[func]
+    fn tyre_count(&self) -> i64 {
+        self.wheels.len() as i64
+    }
+
+    #[func]
+    fn tyre_pos(&self, i: i64) -> Vector3 {
+        let Some(w) = self.wheels.get(i as usize) else { return Vector3::ZERO };
+        w.node.as_ref().map(|n| n.get_global_position()).unwrap_or(Vector3::ZERO)
+    }
+
+    /// A bullet in tyre `i`. True if this was the shot that punctured it.
+    #[func]
+    fn shoot_tyre(&mut self, i: i64) -> bool {
+        self.base_mut().set_sleeping(false);
+        self.idle_t = 0.0;
+        self.wheels.get_mut(i as usize).is_some_and(|w| w.tyre.hit())
+    }
+
+    #[func]
+    fn tyre_pressure(&self, i: i64) -> f32 {
+        self.wheels.get(i as usize).map(|w| w.tyre.pressure).unwrap_or(1.0)
+    }
+
+    #[func]
+    fn flat_tyres(&self) -> i64 {
+        self.wheels.iter().filter(|w| w.tyre.punctured).count() as i64
+    }
+
+    /// One hit on the windshield. Returns the new state (0 intact, 1 cracked,
+    /// 2 gone).
+    #[func]
+    fn windshield_hit(&mut self) -> i32 {
+        self.glass.hit();
+        self.glass.code()
+    }
+
+    #[func]
+    fn windshield_state(&self) -> i32 {
+        self.glass.code()
+    }
+
+    /// Recoil on the chase camera (it has no pitch of its own to kick).
+    #[func]
+    fn view_kick(&mut self, _pitch_deg: f32, yaw_deg: f32) {
+        self.cam_yaw_offset += yaw_deg.to_radians();
+    }
+
     #[func]
     fn reset_upright(&mut self) {
+        self.sensor.reset(Vector3::ZERO);
         let p = self.base().get_global_position() + Vector3::new(0.0, 1.0, 0.0);
         let yaw = self.base().get_rotation().y;
         let mut b = self.base_mut();
@@ -384,10 +475,16 @@ impl ArcadeCar {
         let mut load_total = 0.0;
         let mut comps = [0.0f32; 4];
 
-        let drive_total = self.throttle * vt.engine_force * (1.0 - (vlong_body / vt.max_speed).powi(2)).max(0.0);
+        let crash = world().tuning.crash.clone();
+        let engine = self.hull.engine_factor(&crash);
+        let drive_total = self.throttle * vt.engine_force * engine * (1.0 - (vlong_body / vt.max_speed).powi(2)).max(0.0);
 
         for i in 0..self.wheels.len() {
             let (front, left) = (self.wheels[i].front, self.wheels[i].left);
+            // A flat sits lower: the suspension ray reaches a smaller wheel.
+            self.wheels[i].tyre.tick(dt, &crash);
+            let tyre = self.wheels[i].tyre;
+            let ray_len = ray_len - vt.wheel_radius * (1.0 - tyre.radius(&crash));
             {
                 let wh = &mut self.wheels[i];
                 wh.ray.set_target_position(Vector3::new(0.0, -ray_len, 0.0));
@@ -422,10 +519,18 @@ impl ArcadeCar {
             let r = point - com;
             let pv = v + w.cross(r);
             let vlong = pv.dot(wfwd);
+            // A flat drags at its own corner, so the car pulls toward it.
+            let flat_drag = tyre.drag(&crash, vlong);
+            if flat_drag > 0.0 && vlong.abs() > 0.5 {
+                rough += (1.0 - tyre.pressure) * vlong.abs().min(30.0) * 0.4;
+                let at = point - xf.origin;
+                self.base_mut().apply_force_ex(-wfwd * vlong.signum() * flat_drag).position(at).done();
+            }
             let vlat = pv.dot(wright);
 
             // Grip curve.
             let mut mu = if front { vt.grip_front } else { vt.grip_rear };
+            mu *= tyre.grip(&crash);
             if !front && self.handbrake { mu *= vt.handbrake_grip; }
             let slip_angle = vlat.abs().atan2(vlong.abs() + 0.5);
             let peak = vt.slip_peak_deg.to_radians();
@@ -552,6 +657,24 @@ impl ArcadeCar {
         ));
     }
 
+    fn check_impact(&mut self, dt: f32) {
+        let v = self.base().get_linear_velocity();
+        let touching = self.base().get_contact_count() > 0;
+        let Some(dv) = self.sensor.update(v, touching, dt) else { return };
+        let t = world().tuning.crash.clone();
+        let o = assess(&t, CrashVehicle::Car, dv);
+        if o == CrashOutcome::default() { return; }
+        self.hull.damage(o.hull_loss);
+        // Panels sit at about this height, whatever part of the box was struck.
+        let me = self.to_gd().upcast::<RigidBody3D>();
+        let delta = self.sensor.delta;
+        let mut at = impact_point(&me, delta, Vector3::new(0.87, 0.5, 2.15));
+        at.y = at.y.clamp(0.45, 0.8);
+        self.impact_at = at;
+        self.impact_push = (self.base().get_global_transform().basis.inverse() * delta).normalized_or_zero();
+        self.base_mut().emit_signal("crashed", &[dv.to_variant(), o.injury.to_variant(), (o.glass_hits as i64).to_variant()]);
+    }
+
     fn run_over_check(&mut self) {
         let speed = self.get_speed();
         if speed < 7.0 { return; }
@@ -565,6 +688,7 @@ impl ArcadeCar {
     }
 
     fn update_wheel_visuals(&mut self, dt: f32, vt: &VehicleTuning) {
+        let crash = world().tuning.crash.clone();
         let fwd = self.forward();
         let v = self.base().get_linear_velocity();
         let vlong = v.dot(fwd);
@@ -576,6 +700,8 @@ impl ArcadeCar {
                 n.set_position(wh.anchor - Vector3::new(0.0, travel, 0.0));
                 let yaw = if wh.front { steer } else { 0.0 };
                 n.set_basis(Basis::from_axis_angle(Vector3::UP, yaw) * Basis::from_axis_angle(Vector3::RIGHT, -wh.spin));
+                let k = crash.flat_radius + (1.0 - crash.flat_radius) * wh.tyre.pressure;
+                n.set_scale(Vector3::new(1.0, k, k));
             }
         }
     }
@@ -590,7 +716,7 @@ impl ArcadeCar {
 
         // Recenter mouse-look after a pause.
         self.cam_look_timer -= dt;
-        if self.cam_look_timer <= 0.0 {
+        if self.cam_look_timer <= 0.0 && !self.hold_look {
             self.cam_yaw_offset *= (-ct.car_recenter * dt).exp();
         }
         // Look-ahead into turns.

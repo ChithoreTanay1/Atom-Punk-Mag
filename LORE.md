@@ -61,6 +61,10 @@ All of the following is ours; none of it is history.
 - **A1 Mauryan Way:** the expressway of the feel test, its "A1 Pataliputra" signs, its buildings, the stone elephant and the traffic. The road name comes from the dev's reference image (`refs/expressway.jfif`); "Mauryan" anticipates a dynasty that does not exist yet in the simulation's year, which is part of the archive model's anachronism, not history.
 - **Kestrel 80:** the wedge coupe you drive, built by Kestrel Motor Works. Invented make; the shape nods to the 1968 Bertone Carabo concept car.
 
+- **The Great Temple and its festival, *Nothing Unobserved*:** the rock-cut temple, the Hiranyavaha treasury governor, his successor Ratnakara Savarna, the routine, every line and the dispatches. Its carved court is generic and names no deity [INVENTED].
+- **Avekṣā Corp:** the private surveillance contractor, its grey uniform, cameras, aerostat and drones, and the reel room [INVENTED].
+- **Kestrel Shikra 250:** the two-stroke motorcycle, a second model from the invented Kestrel Motor Works [INVENTED].
+
 ## Design source: espionage (the *Arthashastra*)
 
 These inform mechanics. They are **DESIGN**, not Nanda-era fact. Verify book and chapter numbers against your translation.

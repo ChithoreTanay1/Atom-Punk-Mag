@@ -146,6 +146,8 @@ pub enum Activity {
     Meeting,
     Inspect,
     Depart,
+    /// Walks the processional route; the level leads him point by point.
+    Procession,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -193,6 +195,39 @@ pub struct MissionDef {
     #[serde(default)]
     pub loadout_extra: Vec<String>,
     pub loadout_gadgets: Vec<String>,
+    /// Scene this mission plays in ("" = the Saptavarta level).
+    #[serde(default)]
+    pub scene: String,
+    /// Per-mission gadget stock, overriding gadgets.ron: (gadget id, count).
+    #[serde(default)]
+    pub gadget_counts: Vec<(String, u32)>,
+    /// Objective once the target is gone ("" = the Saptavarta wording).
+    #[serde(default)]
+    pub exfil_text: String,
+    /// Objective under general alarm ("" = the Saptavarta wording).
+    #[serde(default)]
+    pub alarm_text: String,
+    /// Dispatch lines for the debrief, per method. Dry and official.
+    #[serde(default)]
+    pub dispatches: Vec<DispatchDef>,
+    /// Crowd, surveillance and pursuit systems; None for a closed compound.
+    #[serde(default)]
+    pub festival: Option<FestivalDef>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DispatchDef {
+    pub method: Method,
+    pub text: String,
+}
+
+/// Everything data-tunable about a public, watched mission (Mission2.md).
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct FestivalDef {
+    pub surveillance: crate::surveillance::SurveillanceParams,
+    pub crowd: crate::crowd::CrowdParams,
+    pub pursuit: crate::pursuit::PursuitParams,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -218,6 +253,9 @@ pub struct Fallout {
     /// Change to the target's own paranoia (used for Failed).
     #[serde(default)]
     pub paranoia_target: f32,
+    /// Change to the target's rival's paranoia (the rival a forgery points at).
+    #[serde(default)]
+    pub paranoia_rival: f32,
     #[serde(default)]
     pub rumor: Option<String>,
     pub report: String,

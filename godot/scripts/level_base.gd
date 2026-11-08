@@ -9,13 +9,23 @@ var player: FpsController
 var rig: PlayerRig
 var hud: Hud
 var car: ArcadeCar
+## The motorcycle being ridden (or the last one ridden).
+var bike: BikeController
+var riding := false
+## A rider thrown off, while they are in the air and on the ground.
+var _rim_sparks: Array[Dictionary] = []
+var _thrown: RigidBody3D
+var _thrown_cam: Camera3D
+var _thrown_t := 0.0
+var _thrown_rest := 0.0
+var _thrown_yaw := 0.0
 var sun: DirectionalLight3D
 var env: Environment
 var sky_mat: ProceduralSkyMaterial
 var rain: GPUParticles3D
 var weather: Weather
-var base_fog_color := Color("#848D90")
-var base_fog_density := 0.0075
+var base_fog_color := Color("#66767E")
+var base_fog_density := 0.0065
 var driving := false
 ## Driving view: true = first-person cockpit, false = chase camera (V).
 var cockpit_view := true
@@ -66,10 +76,10 @@ func build_environment(rainy := true) -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
 	sky_mat = ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color("#5C6669")
-	sky_mat.sky_horizon_color = Color("#8E9699")
-	sky_mat.ground_horizon_color = Color("#8C9091")
-	sky_mat.ground_bottom_color = Color("#4A4F51")
+	sky_mat.sky_top_color = Color("#3E4D55")
+	sky_mat.sky_horizon_color = Color("#7A8A91")
+	sky_mat.ground_horizon_color = Color("#63737A")
+	sky_mat.ground_bottom_color = Color("#27343A")
 	sky_mat.sky_curve = 0.12
 	sky_mat.sun_angle_max = 40.0
 	sky_mat.sun_curve = 0.25
@@ -79,17 +89,17 @@ func build_environment(rainy := true) -> void:
 	sky.process_mode = Sky.PROCESS_MODE_QUALITY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.62
+	env.ambient_light_energy = 0.58
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 0.92
 	env.fog_enabled = true
-	env.fog_light_color = Color("#848D90")
-	env.fog_density = 0.0075
+	env.fog_light_color = Color("#66767E")
+	env.fog_density = 0.0065
 	env.fog_sky_affect = 0.55
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 0.9
-	env.adjustment_contrast = 1.06
+	env.adjustment_saturation = 1.04
+	env.adjustment_contrast = 1.05
 	env.glow_enabled = true
 	env.glow_intensity = 0.5
 	env.glow_hdr_threshold = 1.1
@@ -98,8 +108,8 @@ func build_environment(rainy := true) -> void:
 	add_child(we)
 	sun = DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-32, -145, 0)
-	sun.light_color = Color("#E3DACB")
-	sun.light_energy = 0.62
+	sun.light_color = Color("#EFCFA8")
+	sun.light_energy = 0.72
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	sun.shadow_blur = 1.5
@@ -123,7 +133,9 @@ func on_quality_changed() -> void:
 		player.get_camera().far = q.far
 	if car:
 		car.get_node("ChaseCam").far = q.far
-	base_fog_density = 0.0075 if float(q.far) > 300 else 0.012
+	if bike:
+		bike.get_node("Visual/RiderCam").far = q.far
+	base_fog_density = 0.0065 if float(q.far) > 300 else 0.011
 	env.fog_density = base_fog_density
 	env.glow_enabled = q.name == "HIGH"
 
@@ -151,10 +163,215 @@ func spawn_car(pos: Vector3, yaw: float, paint := Color(0, 0, 0, 0)) -> ArcadeCa
 	c.position = pos
 	c.rotation.y = yaw
 	add_child(c)
+	c.crashed.connect(func(dv, injury, glass): _on_car_crash(c, dv, injury, glass))
 	Interactable.make(c, Vector3(0, 0.9, 0), Vector3(2.4, 1.6, 4.6),
 		func(): return "E  Drive" if not driving else "",
 		func(): enter_car(c))
 	return c
+
+func spawn_bike(pos: Vector3, yaw: float, paint := P.TEAL) -> BikeController:
+	var b := Builder.make_bike(paint)
+	b.position = pos
+	b.rotation.y = yaw
+	add_child(b)
+	b.set_engine_stream(Game.sfx["ringding"])
+	b.crashed.connect(func(dv, injury, eject): _on_bike_crash(b, dv, injury, eject))
+	Interactable.make(b, Vector3(0, 0.8, 0), Vector3(1.0, 1.4, 2.4),
+		func():
+			if riding or driving or _thrown:
+				return ""
+			return "Shikra (wrecked)" if b.get_hull() <= 0.0 else "E  Ride the Shikra",
+		func():
+			if b.get_hull() > 0.0:
+				enter_bike(b))
+	return b
+
+func enter_bike(b: BikeController) -> void:
+	if riding or driving:
+		return
+	bike = b
+	riding = true
+	if rig.drawn:
+		rig.set_drawn(false)
+	player.set_active(false)
+	b.set_driver(true)
+	var view: Camera3D = b.get_node("Visual/RiderCam")
+	view.far = Game.q().far
+	(b.get_node("Visual/Front") as BikeCockpit).activate(true)
+	rig.enter_vehicle(b, view, b, true)
+	Game.play_3d("door", b.global_position, -8, 3.0, 1.6)
+
+func exit_bike() -> void:
+	if not riding:
+		return
+	var chosen: Vector3 = bike.get_exit_point()
+	var space := get_world_3d().direct_space_state
+	for s: Vector3 in [chosen, bike.global_transform * Vector3(1.1, 0.3, 0.0), bike.global_position + Vector3(0, 1.8, 0)]:
+		var q := PhysicsShapeQueryParameters3D.new()
+		var cap := CapsuleShape3D.new()
+		cap.radius = 0.32
+		cap.height = 1.78
+		q.shape = cap
+		q.transform = Transform3D(Basis(), s + Vector3(0, 0.95, 0))
+		q.collision_mask = 1 | 8
+		if space.intersect_shape(q, 1).is_empty():
+			chosen = s
+			break
+	rig.leave_vehicle()
+	bike.set_driver(false)
+	(bike.get_node("Visual/Front") as BikeCockpit).activate(false)
+	riding = false
+	player.global_position = chosen
+	player.velocity = bike.linear_velocity * 0.3
+	player.set_look(bike.rotation.y, 0.0)
+	player.set_active(true)
+
+# ---- tyres
+
+## A tyre was just punctured: the bang, and sparks for when it is on the rim.
+func on_tyre_shot(v: Node3D, i: int) -> void:
+	Game.play_3d("tyre_pop", v.tyre_pos(i), 0, 12.0)
+	var sparks := CPUParticles3D.new()
+	sparks.amount = 22
+	sparks.lifetime = 0.45
+	sparks.emitting = false
+	sparks.local_coords = false
+	sparks.direction = Vector3(0, 0.5, 1)
+	sparks.spread = 34.0
+	sparks.initial_velocity_min = 2.0
+	sparks.initial_velocity_max = 7.0
+	sparks.gravity = Vector3(0, -9.8, 0)
+	sparks.scale_amount_min = 0.4
+	sparks.scale_amount_max = 1.0
+	var q := BoxMesh.new()
+	q.size = Vector3(0.018, 0.018, 0.09)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(1.0, 0.72, 0.32)
+	q.material = m
+	sparks.mesh = q
+	add_child(sparks)
+	_rim_sparks.append({"v": v, "i": i, "node": sparks})
+	if (driving and v == car) or (riding and v == bike):
+		hud.message("Tyre gone.")
+		rig.jolt(5.0)
+
+func _update_rim_sparks() -> void:
+	for s in _rim_sparks:
+		var v: Node3D = s.v
+		if not is_instance_valid(v):
+			continue
+		var node: CPUParticles3D = s.node
+		var at: Vector3 = v.tyre_pos(s.i)
+		node.global_position = at - Vector3(0, 0.18, 0)
+		node.emitting = v.get_speed() > 5.0 and v.tyre_pressure(s.i) < 0.15
+
+# ---- crashes
+
+## A crash in a car: the windshield, the driver, the engine.
+func _on_car_crash(c: ArcadeCar, dv: float, injury: float, glass: int) -> void:
+	Game.play_3d("crash", c.global_position, clampf(dv * 0.5 - 8.0, -12.0, 2.0), 8.0, randf_range(0.9, 1.1))
+	var ws := c.get_node_or_null("Windshield") as Windshield
+	if ws:
+		for i in glass:
+			ws.strike_anywhere()
+	(c.get_node("DamageSmoke") as CPUParticles3D).emitting = c.get_hull() < 0.35
+	if not (driving and c == car):
+		return
+	rig.jolt(dv)
+	_hurt_by_crash(injury)
+	if c.get_hull() <= 0.0:
+		hud.message("The engine is dead.")
+	elif c.get_hull() < 0.35:
+		hud.message("The engine is failing.")
+
+## A crash on a bike: hard enough, and the rider comes off.
+func _on_bike_crash(b: BikeController, dv: float, injury: float, eject: bool) -> void:
+	Game.play_3d("crash", b.global_position, clampf(dv * 0.5 - 8.0, -12.0, 2.0), 8.0, randf_range(1.05, 1.25))
+	(b.get_node("DamageSmoke") as CPUParticles3D).emitting = b.get_hull() < 0.35
+	if not (riding and b == bike):
+		return
+	rig.jolt(dv)
+	_hurt_by_crash(injury)
+	if eject or b.get_hull() <= 0.0 and dv > 8.0:
+		_throw_rider(b)
+	elif b.get_hull() <= 0.0:
+		hud.message("The engine is dead.")
+	elif b.get_hull() < 0.35:
+		hud.message("The engine is failing.")
+
+func _hurt_by_crash(injury: float) -> void:
+	if injury <= 0.0:
+		return
+	rig.hurt.emit(injury)
+	if rig.mission_on():
+		Game.sim.damage_player(injury)
+
+## Off the bike: the rider flies on with what speed they had, as a small body
+## with its own view, then lies there a moment before getting up.
+func _throw_rider(b: BikeController) -> void:
+	var v: Vector3 = b.get_impact_velocity()
+	rig.leave_vehicle()
+	b.set_driver(false)
+	(b.get_node("Visual/Front") as BikeCockpit).activate(false)
+	b.fall_over()
+	riding = false
+	var body := RigidBody3D.new()
+	body.mass = 75.0
+	body.collision_layer = 0
+	body.collision_mask = 1 | 8
+	body.linear_damp = 0.25
+	body.angular_damp = 1.2
+	var phys := PhysicsMaterial.new()
+	phys.friction = 0.7
+	phys.bounce = 0.25
+	body.physics_material_override = phys
+	var cs := CollisionShape3D.new()
+	var sph := SphereShape3D.new()
+	sph.radius = 0.35
+	cs.shape = sph
+	body.add_child(cs)
+	add_child(body)
+	body.global_position = b.global_position + Vector3(0, 1.3, 0)
+	body.linear_velocity = v * 0.8 + Vector3(0, 3.0, 0)
+	body.angular_velocity = Vector3(randf_range(-5, 5), randf_range(-2, 2), randf_range(-5, 5))
+	var cam := Camera3D.new()
+	cam.top_level = true
+	cam.near = 0.05
+	cam.far = Game.q().far
+	cam.fov = 80.0
+	body.add_child(cam)
+	cam.make_current()
+	_thrown = body
+	_thrown_cam = cam
+	_thrown_t = 0.0
+	_thrown_yaw = atan2(-v.x, -v.z) if v.length() > 1.0 else b.rotation.y
+	hud.message("Thrown clear.")
+	Game.play_2d("flesh", 0, 0.7)
+
+func _update_thrown(dt: float) -> void:
+	_thrown_t += dt
+	var settled := _thrown.linear_velocity.length() < 1.2
+	if settled:
+		_thrown_rest += dt
+	else:
+		_thrown_rest = 0.0
+	var at := _thrown.global_position
+	player.global_position = at
+	# Tumbling view; once it stops, lying on one side.
+	var spin := _thrown.global_basis.get_euler()
+	var roll: float = lerpf(spin.z, 1.35, clampf(_thrown_rest * 2.0, 0.0, 1.0))
+	var pitch: float = lerpf(spin.x * 0.7, -0.1, clampf(_thrown_rest * 2.0, 0.0, 1.0))
+	_thrown_cam.global_transform = Transform3D(Basis.from_euler(Vector3(pitch, _thrown_yaw, roll)), at + Vector3(0, 0.05, 0))
+	if _thrown_rest >= float(Game.sim.get_tuning("crash", "thrown_seconds")) or _thrown_t > 9.0:
+		var yaw := _thrown_yaw
+		_thrown.queue_free()
+		_thrown = null
+		_thrown_cam = null
+		_thrown_rest = 0.0
+		player.global_position = at + Vector3(0, 0.2, 0)
+		player.set_look(yaw, 0.0)
+		player.set_active(true)
 
 func _debug_ragdoll() -> void:
 	await get_tree().create_timer(float(Game.debug.get("ragdoll_delay", "0.6"))).timeout
@@ -262,11 +479,21 @@ func enter_car(c: ArcadeCar) -> void:
 	c.set_driver(true)
 	if cockpit_view and c.has_node("Cockpit"):
 		c.get_node("Cockpit").activate(true)
+	_car_view()
 	Game.play_3d("door", c.global_position, -4)
+
+## Hand the rig whichever view the car is in, for shooting from the seat.
+func _car_view() -> void:
+	var ck: CarCockpit = car.get_node("Cockpit")
+	if cockpit_view:
+		rig.enter_vehicle(car, ck.cam, ck, true)
+	else:
+		rig.enter_vehicle(car, car.get_node("ChaseCam"), car, false)
 
 func exit_car() -> void:
 	if not driving:
 		return
+	rig.leave_vehicle()
 	var spot := car.get_exit_point()
 	var sides := [spot, car.global_transform * Vector3(1.6, 0.4, -0.2), car.global_position + Vector3(0, 2.2, 0)]
 	var space := get_world_3d().direct_space_state
@@ -314,12 +541,18 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e.is_action_pressed("interact") and driving:
 		exit_car()
 		get_viewport().set_input_as_handled()
+	elif e.is_action_pressed("interact") and riding:
+		exit_bike()
+		get_viewport().set_input_as_handled()
+	elif e.is_action_pressed("reset_car") and riding:
+		bike.reset_upright()
 	elif e.is_action_pressed("camera_view") and driving and car.has_node("Cockpit"):
 		cockpit_view = not cockpit_view
 		var ck: CarCockpit = car.get_node("Cockpit")
 		ck.activate(cockpit_view)
 		if not cockpit_view:
 			car.set_driver(true)
+		_car_view()
 		hud.message("Cockpit view" if cockpit_view else "Chase view")
 	elif e.is_action_pressed("reset_car") and driving:
 		car.reset_upright()
@@ -330,6 +563,12 @@ func _physics_process(_dt: float) -> void:
 	if driving and car:
 		# Keep the (hidden) player with the car so AI and zones track it.
 		player.global_position = car.global_position + Vector3(0, 0.2, 0)
+	elif riding and bike:
+		player.global_position = bike.global_position + Vector3(0, 0.2, 0)
+	elif _thrown:
+		_update_thrown(_dt)
+	if not _rim_sparks.is_empty():
+		_update_rim_sparks()
 
 func _process(_dt: float) -> void:
 	if Game.debug.has("drive") and car and Engine.get_process_frames() % 30 == 0:
@@ -340,5 +579,5 @@ func _process(_dt: float) -> void:
 ## Weather nudges fog toward a snowy white-out (from the level's base values).
 func _weather_env() -> void:
 	var falling := 1.0 if weather.mode == "snow" else 0.0
-	env.fog_light_color = base_fog_color.lerp(Color("#B4BCC0"), clampf(weather.snow * 0.5 + falling * 0.25, 0.0, 0.7))
+	env.fog_light_color = base_fog_color.lerp(Color("#93A9B5"), clampf(weather.snow * 0.5 + falling * 0.25, 0.0, 0.7))
 	env.fog_density = base_fog_density * (1.0 + falling * 0.9)

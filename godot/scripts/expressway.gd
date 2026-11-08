@@ -52,6 +52,10 @@ const RAMP_FLAT := 24.0
 var origin_z := 0.0
 ## Called as extra.call(index, chunk_node) after a chunk is built.
 var extra := Callable()
+## No chunks before this index (a level that starts the road at its own gate).
+var min_index := -1000000
+## Chunk index -> left-hand piece, overriding the usual row of buildings.
+var left_override := {}
 var chunks := {}
 var _proto := {}
 
@@ -76,7 +80,7 @@ func update(focus_z: float) -> void:
 	var made := 0
 	for k in RADIUS + 1:
 		for i in [ci - k, ci + k]:
-			if not chunks.has(i) and made < 2:
+			if not chunks.has(i) and made < 2 and i >= min_index:
 				_spawn(i)
 				made += 1
 	for i in chunks.keys():
@@ -98,6 +102,8 @@ func _index(local_z: float) -> int:
 	return int(floor((local_z + origin_z) / L))
 
 func _spawn(i: int) -> void:
+	if i < min_index:
+		return
 	var c := Node3D.new()
 	c.name = "Chunk%d" % i
 	c.position = Vector3(0, 0, i * L - origin_z)
@@ -118,6 +124,8 @@ func _spawn(i: int) -> void:
 		left = "yard_a"
 	elif i == 0:
 		left = "yard_b"
+	if left_override.has(i):
+		left = left_override[i]
 	c.add_child(_proto[left].duplicate())
 	c.add_child(_proto["right%d" % posmod(i + _hash(i >> 2, 3), 4)].duplicate())
 	c.add_child(_proto["farl%d" % (_hash(i, 11) % 3)].duplicate())
